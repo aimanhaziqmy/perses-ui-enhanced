@@ -1,0 +1,9 @@
+dependencies:
+- name: victoria-metrics-single
+  repository: https://victoriametrics.github.io/helm-charts/
+  version: 0.51.0
+- name: perses
+  repository: https://perses.github.io/helm-charts
+  version: 0.24.0
+digest: sha256:662b57fd4766c3c3081120e47dae2716cfffe87c67cbab2638a771b4d0bb0aef
+generated: "2026-11-13T15:28:25.736734318+08:00"

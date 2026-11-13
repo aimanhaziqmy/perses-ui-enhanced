@@ -1,0 +1,354 @@
+# Default values for perses-observability (Unified Observability Umbrella Chart).
+# Combines VictoriaLogs, VictoriaMetrics, Perses Go Backend, and perses-ui-enhanced.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ------------------------------------------------------------------------------
+# 1. VictoriaLogs Single Server (Core Log Database & VMUI)
+# ------------------------------------------------------------------------------
+victoriaLogs:
+  enabled: true
+  # External/existing service endpoint used by Perses provisioning when victoriaLogs.enabled is false
+  serviceUrl: "http://vl-victoria-logs-single-server:9428"
+  image:
+    repository: victoriametrics/victoria-logs
+    tag: v1.53.0
+    pullPolicy: IfNotPresent
+  retentionPeriod: 7d
+  persistence:
+    enabled: true
+    # Leave empty ("") to use the cluster default StorageClass
+    storageClassName: ""
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2048Mi
+
+# ------------------------------------------------------------------------------
+# 2. VictoriaLogs Collector (DaemonSet with K8s & Host Telemetry)
+# ------------------------------------------------------------------------------
+collector:
+  enabled: true
+  image:
+    repository: victoriametrics/vlagent
+    tag: v1.53.0
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  fileCollector:
+    - glob: /var/log/kern.log
+      extraFields: '{"stream":"host_kernel","log_type":"kernel","host":"%{HOSTNAME}","hostname":"%{HOSTNAME}"}'
+    - glob: /var/log/syslog
+      extraFields: '{"stream":"host_syslog","log_type":"systemd","host":"%{HOSTNAME}","hostname":"%{HOSTNAME}"}'
+
+# ------------------------------------------------------------------------------
+# 3. Kubernetes Lifecycle Event Exporter
+# ------------------------------------------------------------------------------
+eventExporter:
+  enabled: true
+  image:
+    repository: ghcr.io/resmoio/kubernetes-event-exporter
+    tag: v1.7@sha256:8abb52b66557d3333f9e473e0eff2951309abfd018bd8d7fcfd86c4ecce6b9cf
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ------------------------------------------------------------------------------
+# 4. Multi-Tenant RBAC Auth Proxy (vmauth) - Optional
+# ------------------------------------------------------------------------------
+vmauth:
+  enabled: false
+  image:
+    repository: victoriametrics/vmauth
+    tag: v1.156.0
+    pullPolicy: IfNotPresent
+  adminPassword: "changeme-vmauth-admin"
+  flagsAuthKey: "changeme-flags-auth-key"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  tenants:
+    - workspace: team-a
+    - workspace: team-b
+
+# ------------------------------------------------------------------------------
+# 5. OIDC Auth Gate (oauth2-proxy for VMUI) - Optional
+# ------------------------------------------------------------------------------
+oauth2Proxy:
+  enabled: false
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    tag: v7.6.0
+    pullPolicy: IfNotPresent
+  clientId: "victorialogs"
+  clientSecret: "changeme-oidc-client-secret"
+  cookieSecret: "0123456789abcdef0123456789abcdef"
+  issuerUrl: "https://sso.example.com/realms/observability"
+  loginUrl: "https://sso.example.com/realms/observability/protocol/openid-connect/auth"
+  redeemUrl: "https://sso.example.com/realms/observability/protocol/openid-connect/token"
+  jwksUrl: "https://sso.example.com/realms/observability/protocol/openid-connect/certs"
+  redirectUrl: "https://logs.example.com/oauth2/callback"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ------------------------------------------------------------------------------
+# 6. Gateway API HTTPRoute Ingress (VMUI via oauth2-proxy) - Optional
+# ------------------------------------------------------------------------------
+httpRoute:
+  enabled: false
+  hostname: "logs.example.com"
+  parentGateway:
+    kind: Gateway
+    name: main-gateway
+    namespace: gateway-system
+    sectionName: https
+
+# ------------------------------------------------------------------------------
+# Subchart Enablement Toggles
+# ------------------------------------------------------------------------------
+subcharts:
+  victoriaMetricsEnabled: true
+  persesEnabled: true
+
+# ------------------------------------------------------------------------------
+# 7. VictoriaMetrics Single Server (Subchart: vm/victoria-metrics-single 0.51.0)
+# ------------------------------------------------------------------------------
+victoriaMetrics:
+  fullnameOverride: "victoria-metrics"
+  server:
+    fullnameOverride: "victoria-metrics"
+    image:
+      repository: victoriametrics/victoria-metrics
+      tag: v1.156.0
+      pullPolicy: IfNotPresent
+    retentionPeriod: 7d
+    persistentVolume:
+      enabled: true
+      # Leave empty ("") to use the cluster default StorageClass
+      storageClassName: ""
+      size: 20Gi
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2048Mi
+    scrape:
+      enabled: true
+      config:
+        global:
+          scrape_interval: 15s
+        scrape_configs:
+          - job_name: victoriametrics
+            static_configs:
+              - targets: ["localhost:8428"]
+          - job_name: victorialogs
+            static_configs:
+              - targets: ["vl-victoria-logs-single-server:9428"]
+          - job_name: vmauth
+            static_configs:
+              - targets: ["vmauth-victoria-metrics-auth:8427"]
+          - job_name: perses
+            static_configs:
+              - targets: ["perses:8080"]
+          - job_name: node-exporter
+            kubernetes_sd_configs:
+              - role: endpoints
+                namespaces:
+                  names: ["monitoring"]
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+                action: keep
+                regex: .*node-exporter.*;.*
+              - source_labels: [__meta_kubernetes_endpoint_node_name]
+                target_label: node
+          - job_name: kube-state-metrics
+            static_configs:
+              - targets: ["kube-state-metrics.monitoring.svc.cluster.local:8080"]
+          - job_name: nvidia-dcgm-exporter
+            kubernetes_sd_configs:
+              - role: endpoints
+                namespaces:
+                  names: ["gpu-operator"]
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_service_name]
+                action: keep
+                regex: nvidia-dcgm-exporter
+              - source_labels: [__meta_kubernetes_endpoint_node_name]
+                target_label: node
+          - job_name: kubernetes-cadvisor
+            scheme: https
+            tls_config:
+              ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              insecure_skip_verify: true
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+            kubernetes_sd_configs:
+              - role: node
+            relabel_configs:
+              - action: labelmap
+                regex: __meta_kubernetes_node_label_(.+)
+              - target_label: __address__
+                replacement: kubernetes.default.svc:443
+              - source_labels: [__meta_kubernetes_node_name]
+                regex: (.+)
+                target_label: __metrics_path__
+                replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor
+
+# ------------------------------------------------------------------------------
+# 8. Perses Backend (Subchart: perses/perses 0.24.0, app v0.55.1)
+# ------------------------------------------------------------------------------
+persesAuth:
+  # Exact 32-byte AES-256 key; override via --set or ExternalSecret in production
+  encryptionKey: "ChangeMePersesAES256SecretKey32B"
+  oidcClientId: "perses"
+  oidcClientSecret: "changeme-oidc-client-secret"
+  nativeAdminUsername: "admin"
+  nativeAdminPassword: "changeme"
+
+persesProvisioning:
+  enabled: true
+  projectName: "observability"
+  projectDisplayName: "Kubernetes Platform Observability"
+
+perses:
+  fullnameOverride: "perses"
+  image:
+    registry: docker.io
+    name: "persesdev/perses"
+    version: "v0.55.1"
+    pullPolicy: IfNotPresent
+  testFramework:
+    enabled: false
+  sidecar:
+    enabled: false
+  persistence:
+    enabled: true
+    # Uncomment and set your cluster StorageClass (when omitted, Kubernetes uses the cluster default)
+    # storageClass: "standard"
+    accessModes:
+      - ReadWriteOnce
+    size: 8Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  volumes:
+    - name: perses-auth-secrets
+      secret:
+        secretName: perses-auth-secrets
+        defaultMode: 420
+    - name: perses-provisioning-manifests
+      configMap:
+        name: perses-provisioning
+        defaultMode: 420
+  volumeMounts:
+    - name: perses-auth-secrets
+      mountPath: /etc/perses/secrets
+      readOnly: true
+    - name: perses-provisioning-manifests
+      mountPath: /etc/perses/provisioning
+      readOnly: true
+  config:
+    api_prefix: ""
+    security:
+      readonly: false
+      enable_auth: true
+      encryption_key_file: /etc/perses/secrets/encryption-key
+      secret_file_allowed_directories:
+        - /etc/perses/secrets
+      cookie:
+        same_site: lax
+        # Set to true when serving over HTTPS/TLS
+        secure: false
+      authentication:
+        access_token_ttl: 1h
+        refresh_token_ttl: 24h
+        disable_sign_up: true
+        providers:
+          enable_native: true
+          # Optional OAuth/OIDC provider example:
+          # oauth:
+          #   - slug_id: sso
+          #     name: "SSO Login"
+          #     client_id: "perses"
+          #     client_secret_file: /etc/perses/secrets/client-secret
+          #     scopes: ["openid", "profile", "email"]
+          #     auth_url: "https://sso.example.com/realms/observability/protocol/openid-connect/auth"
+          #     token_url: "https://sso.example.com/realms/observability/protocol/openid-connect/token"
+          #     user_infos_url: "https://sso.example.com/realms/observability/protocol/openid-connect/userinfo"
+          #     redirect_uri: "https://perses.example.com/api/auth/providers/oauth/sso/callback"
+          #     custom_login_property: "preferred_username"
+      authorization:
+        guest_permissions:
+          - actions: ["*"]
+            scopes: ["*"]
+    frontend:
+      explorer:
+        enable: true
+      information: "Unified Observability Stack (Perses + VictoriaMetrics + VictoriaLogs)"
+    database:
+      file:
+        folder: /perses
+        extension: json
+    provisioning:
+      folders:
+        - /etc/perses/provisioning
+      interval: 10m
+
+# ------------------------------------------------------------------------------
+# 9. Enhanced React + TypeScript Observability UI Shell (perses-ui-enhanced)
+# ------------------------------------------------------------------------------
+observabilityUi:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/aimanhaziqmy/perses-ui-enhanced
+    tag: "v1.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  nodeSelector: {}
+  httpRoute:
+    enabled: false
+    hostname: "perses.example.com"
+    parentGateway:
+      kind: Gateway
+      name: main-gateway
+      namespace: gateway-system
+      sectionName: https

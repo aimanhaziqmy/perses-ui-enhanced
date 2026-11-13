@@ -1,0 +1,25 @@
+{{- if .Values.httpRoute.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vlogs-ui
+  namespace: {{ .Release.Namespace }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: {{ default "Gateway" .Values.httpRoute.parentGateway.kind }}
+      name: {{ .Values.httpRoute.parentGateway.name }}
+      namespace: {{ .Values.httpRoute.parentGateway.namespace }}
+      sectionName: {{ .Values.httpRoute.parentGateway.sectionName }}
+  hostnames:
+    - {{ .Values.httpRoute.hostname | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: oauth2-proxy
+          port: 4180
+{{- end }}
+

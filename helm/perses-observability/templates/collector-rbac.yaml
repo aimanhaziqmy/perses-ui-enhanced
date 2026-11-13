@@ -1,0 +1,30 @@
+{{- if .Values.collector.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vlcollector-victoria-logs-collector
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vlcollector-victoria-logs-collector
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "namespaces"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vlcollector-victoria-logs-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vlcollector-victoria-logs-collector
+subjects:
+  - kind: ServiceAccount
+    name: vlcollector-victoria-logs-collector
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+

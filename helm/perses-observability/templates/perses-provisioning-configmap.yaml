@@ -1,0 +1,715 @@
+{{- if and .Values.subcharts.persesEnabled .Values.persesProvisioning.enabled }}
+{{- $vmUrl := printf "http://victoria-metrics.%s.svc.cluster.local:8428" .Release.Namespace }}
+{{- if .Values.subcharts.victoriaMetricsEnabled }}
+{{- $vmUrl = printf "http://%s.%s.svc.cluster.local:8428" (default "victoria-metrics" .Values.victoriaMetrics.server.fullnameOverride) .Release.Namespace }}
+{{- end }}
+{{- $vlUrl := .Values.victoriaLogs.serviceUrl }}
+{{- if .Values.victoriaLogs.enabled }}
+{{- $vlUrl = printf "http://vl-victoria-logs-single-server.%s.svc.cluster.local:9428" .Release.Namespace }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: perses-provisioning
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+data:
+  01-users.json: |
+    [
+      {
+        "kind": "User",
+        "metadata": {
+          "name": {{ .Values.persesAuth.nativeAdminUsername | quote }}
+        },
+        "spec": {
+          "nativeProvider": {
+            "password": {{ .Values.persesAuth.nativeAdminPassword | quote }}
+          }
+        }
+      },
+      {
+        "kind": "GlobalRole",
+        "metadata": {
+          "name": "admin"
+        },
+        "spec": {
+          "permissions": [
+            {
+              "actions": ["*"],
+              "scopes": ["*"]
+            }
+          ]
+        }
+      },
+      {
+        "kind": "GlobalRoleBinding",
+        "metadata": {
+          "name": "admin"
+        },
+        "spec": {
+          "role": "admin",
+          "subjects": [
+            {
+              "kind": "User",
+              "name": {{ .Values.persesAuth.nativeAdminUsername | quote }}
+            }
+          ]
+        }
+      }
+    ]
+  02-globaldatasources.json: |
+    [
+      {
+        "kind": "GlobalDatasource",
+        "metadata": {
+          "name": "VictoriaMetrics"
+        },
+        "spec": {
+          "default": true,
+          "display": {
+            "name": "VictoriaMetrics (Cluster & GPU Metrics)"
+          },
+          "plugin": {
+            "kind": "PrometheusDatasource",
+            "spec": {
+              "proxy": {
+                "kind": "HTTPProxy",
+                "spec": {
+                  "url": {{ $vmUrl | quote }}
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "kind": "GlobalDatasource",
+        "metadata": {
+          "name": "VictoriaLogs"
+        },
+        "spec": {
+          "default": true,
+          "display": {
+            "name": "VictoriaLogs (Cluster, Host & AI Inference Logs)"
+          },
+          "plugin": {
+            "kind": "VictoriaLogsDatasource",
+            "spec": {
+              "proxy": {
+                "kind": "HTTPProxy",
+                "spec": {
+                  "url": {{ $vlUrl | quote }}
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  03-project.json: |
+    [
+      {
+        "kind": "Project",
+        "metadata": {
+          "name": {{ .Values.persesProvisioning.projectName | quote }}
+        },
+        "spec": {
+          "display": {
+            "name": {{ .Values.persesProvisioning.projectDisplayName | quote }}
+          }
+        }
+      }
+    ]
+  04-dashboards.json: |
+    [
+      {
+        "kind": "Dashboard",
+        "metadata": {
+          "name": "cluster-node-gpu-metrics",
+          "project": {{ .Values.persesProvisioning.projectName | quote }}
+        },
+        "spec": {
+          "display": {
+            "name": "Cluster, Node & NVIDIA GPU Telemetry"
+          },
+          "duration": "1h",
+          "refreshInterval": "30s",
+          "variables": [],
+          "panels": {
+            "cpuUtilization": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "Node CPU Utilization (%)",
+                  "description": "Per-node CPU usage across cluster nodes"
+                },
+                "plugin": {
+                  "kind": "TimeSeriesChart",
+                  "spec": {
+                    "legend": {
+                      "position": "bottom"
+                    },
+                    "visual": {
+                      "areaOpacity": 0.2,
+                      "lineWidth": 2
+                    },
+                    "yAxis": {
+                      "show": true,
+                      "min": 0,
+                      "max": 100,
+                      "format": {
+                        "unit": "percent"
+                      }
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TimeSeriesQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "PrometheusTimeSeriesQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "PrometheusDatasource",
+                            "name": "VictoriaMetrics"
+                          },
+                          "seriesNameFormat": "{{`{{node}}`}}",
+                          "query": "100 - (avg by (node) (rate(node_cpu_seconds_total{mode=\"idle\"}[2m])) * 100)"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "memoryUtilization": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "Node Memory Utilization (%)",
+                  "description": "Physical memory used across cluster nodes"
+                },
+                "plugin": {
+                  "kind": "TimeSeriesChart",
+                  "spec": {
+                    "legend": {
+                      "position": "bottom"
+                    },
+                    "visual": {
+                      "areaOpacity": 0.2,
+                      "lineWidth": 2
+                    },
+                    "yAxis": {
+                      "show": true,
+                      "min": 0,
+                      "max": 100,
+                      "format": {
+                        "unit": "percent"
+                      }
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TimeSeriesQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "PrometheusTimeSeriesQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "PrometheusDatasource",
+                            "name": "VictoriaMetrics"
+                          },
+                          "seriesNameFormat": "{{`{{node}}`}}",
+                          "query": "100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "gpuUtilization": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "NVIDIA GPU Utilization (%)",
+                  "description": "NVIDIA DCGM GPU compute utilization (%)"
+                },
+                "plugin": {
+                  "kind": "TimeSeriesChart",
+                  "spec": {
+                    "legend": {
+                      "position": "bottom"
+                    },
+                    "visual": {
+                      "areaOpacity": 0.2,
+                      "lineWidth": 2
+                    },
+                    "yAxis": {
+                      "show": true,
+                      "min": 0,
+                      "max": 100,
+                      "format": {
+                        "unit": "percent"
+                      }
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TimeSeriesQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "PrometheusTimeSeriesQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "PrometheusDatasource",
+                            "name": "VictoriaMetrics"
+                          },
+                          "seriesNameFormat": "{{`{{node}} - {{modelName}}`}}",
+                          "query": "DCGM_FI_DEV_GPU_UTIL"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "gpuMemoryUsed": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "NVIDIA GPU VRAM Used (MiB)",
+                  "description": "Framebuffer memory allocated on cluster GPUs"
+                },
+                "plugin": {
+                  "kind": "TimeSeriesChart",
+                  "spec": {
+                    "legend": {
+                      "position": "bottom"
+                    },
+                    "visual": {
+                      "areaOpacity": 0.2,
+                      "lineWidth": 2
+                    },
+                    "yAxis": {
+                      "show": true,
+                      "format": {
+                        "unit": "decimal",
+                        "shortValues": true
+                      }
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TimeSeriesQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "PrometheusTimeSeriesQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "PrometheusDatasource",
+                            "name": "VictoriaMetrics"
+                          },
+                          "seriesNameFormat": "{{`{{node}} - {{modelName}}`}}",
+                          "query": "DCGM_FI_DEV_FB_USED"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "gpuTemp": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "Peak GPU Temperature (°C)"
+                },
+                "plugin": {
+                  "kind": "GaugeChart",
+                  "spec": {
+                    "calculation": "last-number",
+                    "max": 100,
+                    "format": {
+                      "unit": "decimal"
+                    },
+                    "thresholds": {
+                      "steps": [
+                        { "value": 70 },
+                        { "value": 85 }
+                      ]
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TimeSeriesQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "PrometheusTimeSeriesQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "PrometheusDatasource",
+                            "name": "VictoriaMetrics"
+                          },
+                          "query": "max(DCGM_FI_DEV_GPU_TEMP)"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "runningPods": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "Running Kubernetes Pods"
+                },
+                "plugin": {
+                  "kind": "StatChart",
+                  "spec": {
+                    "calculation": "last-number",
+                    "format": {
+                      "unit": "decimal",
+                      "decimalPlaces": 0
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TimeSeriesQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "PrometheusTimeSeriesQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "PrometheusDatasource",
+                            "name": "VictoriaMetrics"
+                          },
+                          "query": "count(kube_pod_status_phase{phase=\"Running\"} == 1)"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "clusterUptime": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "Cluster Uptime"
+                },
+                "plugin": {
+                  "kind": "StatChart",
+                  "spec": {
+                    "calculation": "last-number",
+                    "format": {
+                      "unit": "seconds",
+                      "decimalPlaces": 0
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TimeSeriesQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "PrometheusTimeSeriesQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "PrometheusDatasource",
+                            "name": "VictoriaMetrics"
+                          },
+                          "query": "time() - min(node_boot_time_seconds)"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "clusterMemoryTotal": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "Total Cluster RAM"
+                },
+                "plugin": {
+                  "kind": "StatChart",
+                  "spec": {
+                    "calculation": "last-number",
+                    "format": {
+                      "unit": "bytes",
+                      "decimalPlaces": 1
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TimeSeriesQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "PrometheusTimeSeriesQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "PrometheusDatasource",
+                            "name": "VictoriaMetrics"
+                          },
+                          "query": "sum(node_memory_MemTotal_bytes)"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "vlogsIngestionRate": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "VictoriaLogs Active Streams / Ingestion"
+                },
+                "plugin": {
+                  "kind": "StatChart",
+                  "spec": {
+                    "calculation": "last-number",
+                    "format": {
+                      "unit": "decimal",
+                      "decimalPlaces": 1,
+                      "shortValues": true
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TimeSeriesQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "PrometheusTimeSeriesQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "PrometheusDatasource",
+                            "name": "VictoriaMetrics"
+                          },
+                          "query": "sum(rate(vl_rows_ingested_total[5m]))"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "layouts": [
+            {
+              "kind": "Grid",
+              "spec": {
+                "display": {
+                  "title": "Basic Info",
+                  "collapse": { "open": true }
+                },
+                "items": [
+                  { "x": 0, "y": 0, "width": 6, "height": 5, "content": { "$ref": "#/spec/panels/clusterUptime" } },
+                  { "x": 6, "y": 0, "width": 6, "height": 5, "content": { "$ref": "#/spec/panels/runningPods" } },
+                  { "x": 12, "y": 0, "width": 6, "height": 5, "content": { "$ref": "#/spec/panels/clusterMemoryTotal" } },
+                  { "x": 18, "y": 0, "width": 6, "height": 5, "content": { "$ref": "#/spec/panels/vlogsIngestionRate" } }
+                ]
+              }
+            },
+            {
+              "kind": "Grid",
+              "spec": {
+                "display": {
+                  "title": "Compute & Memory",
+                  "collapse": { "open": true }
+                },
+                "items": [
+                  { "x": 0, "y": 0, "width": 12, "height": 8, "content": { "$ref": "#/spec/panels/cpuUtilization" } },
+                  { "x": 12, "y": 0, "width": 12, "height": 8, "content": { "$ref": "#/spec/panels/memoryUtilization" } }
+                ]
+              }
+            },
+            {
+              "kind": "Grid",
+              "spec": {
+                "display": {
+                  "title": "NVIDIA GPU Telemetry",
+                  "collapse": { "open": true }
+                },
+                "items": [
+                  { "x": 0, "y": 0, "width": 10, "height": 8, "content": { "$ref": "#/spec/panels/gpuUtilization" } },
+                  { "x": 10, "y": 0, "width": 10, "height": 8, "content": { "$ref": "#/spec/panels/gpuMemoryUsed" } },
+                  { "x": 20, "y": 0, "width": 4, "height": 8, "content": { "$ref": "#/spec/panels/gpuTemp" } }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "Dashboard",
+        "metadata": {
+          "name": "logs-and-k8s-events",
+          "project": {{ .Values.persesProvisioning.projectName | quote }}
+        },
+        "spec": {
+          "display": {
+            "name": "Unified VictoriaLogs & Kubernetes Events"
+          },
+          "duration": "1h",
+          "refreshInterval": "30s",
+          "variables": [],
+          "panels": {
+            "logVolumeByStream": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "Log Volume Over Time (LogsQL)",
+                  "description": "Cluster log rate from VictoriaLogs"
+                },
+                "plugin": {
+                  "kind": "TimeSeriesChart",
+                  "spec": {
+                    "legend": {
+                      "position": "bottom"
+                    },
+                    "visual": {
+                      "areaOpacity": 0.2,
+                      "lineWidth": 2
+                    },
+                    "yAxis": {
+                      "show": true,
+                      "format": {
+                        "unit": "decimal",
+                        "shortValues": true
+                      }
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TimeSeriesQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "VictoriaLogsTimeSeriesQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "VictoriaLogsDatasource",
+                            "name": "VictoriaLogs"
+                          },
+                          "query": "* | stats by (kubernetes.pod_namespace) count() as logs"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "k8sWarningEvents": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "Kubernetes Lifecycle Events (k8s_events)",
+                  "description": "Cluster scheduling, OOMKilled, Evicted, and Normal events"
+                },
+                "plugin": {
+                  "kind": "LogsTable",
+                  "spec": {
+                    "allowWrap": true,
+                    "enableDetails": true,
+                    "showTime": true
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "LogQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "VictoriaLogsLogQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "VictoriaLogsDatasource",
+                            "name": "VictoriaLogs"
+                          },
+                          "query": "stream:=\"k8s_events\" | sort by (_time desc) | limit 100"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "recentClusterLogs": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "Recent Cluster & Host Logs",
+                  "description": "Live LogsQL stream across pods, kernel, and systemd"
+                },
+                "plugin": {
+                  "kind": "LogsTable",
+                  "spec": {
+                    "allowWrap": true,
+                    "enableDetails": true,
+                    "showTime": true
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "LogQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "VictoriaLogsLogQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "VictoriaLogsDatasource",
+                            "name": "VictoriaLogs"
+                          },
+                          "query": "* | sort by (_time desc) | limit 100"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "layouts": [
+            {
+              "kind": "Grid",
+              "spec": {
+                "display": {
+                  "title": "VictoriaLogs Ingestion Volume",
+                  "collapse": { "open": true }
+                },
+                "items": [
+                  { "x": 0, "y": 0, "width": 24, "height": 8, "content": { "$ref": "#/spec/panels/logVolumeByStream" } }
+                ]
+              }
+            },
+            {
+              "kind": "Grid",
+              "spec": {
+                "display": {
+                  "title": "Live Log Streams",
+                  "collapse": { "open": true }
+                },
+                "items": [
+                  { "x": 0, "y": 0, "width": 24, "height": 10, "content": { "$ref": "#/spec/panels/k8sWarningEvents" } },
+                  { "x": 0, "y": 10, "width": 24, "height": 10, "content": { "$ref": "#/spec/panels/recentClusterLogs" } }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+{{- end }}
+

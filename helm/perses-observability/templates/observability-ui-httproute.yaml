@@ -1,0 +1,27 @@
+{{- if and .Values.observabilityUi.enabled .Values.observabilityUi.httpRoute.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: perses-ui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: {{ default "Gateway" .Values.observabilityUi.httpRoute.parentGateway.kind }}
+      name: {{ .Values.observabilityUi.httpRoute.parentGateway.name }}
+      namespace: {{ .Values.observabilityUi.httpRoute.parentGateway.namespace }}
+      sectionName: {{ .Values.observabilityUi.httpRoute.parentGateway.sectionName }}
+  hostnames:
+    - {{ .Values.observabilityUi.httpRoute.hostname | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: perses-ui-enhanced
+          port: {{ .Values.observabilityUi.service.port }}
+{{- end }}
+

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Perses · Unified Observability</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      (function () {
+        var origDefineProperty = Object.defineProperty;
+        Object.defineProperty = function (target, prop, descriptor) {
+          if (
+            prop === Symbol.toStringTag &&
+            descriptor &&
+            descriptor.value === 'Module' &&
+            target &&
+            (typeof target === 'object' || typeof target === 'function') &&
+            !Object.prototype.hasOwnProperty.call(target, '__esModule')
+          ) {
+            try {
+              origDefineProperty(target, '__esModule', {
+                value: true,
+                enumerable: false,
+                configurable: true,
+              });
+            } catch (_) {
+              // Ignore non-extensible targets
+            }
+          }
+          return origDefineProperty.call(Object, target, prop, descriptor);
+        };
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,76 @@
+{{- if .Values.victoriaLogs.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vl-victoria-logs-single-server
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: victoria-logs-single
+    app.kubernetes.io/instance: vl
+    app: server
+spec:
+  serviceName: vl-victoria-logs-single-server
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: victoria-logs-single
+      app.kubernetes.io/instance: vl
+      app: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: victoria-logs-single
+        app.kubernetes.io/instance: vl
+        app: server
+    spec:
+      containers:
+        - name: server
+          image: "{{ .Values.victoriaLogs.image.repository }}:{{ .Values.victoriaLogs.image.tag }}"
+          imagePullPolicy: {{ .Values.victoriaLogs.image.pullPolicy }}
+          args:
+            - -envflag.enable=true
+            - -retentionPeriod={{ .Values.victoriaLogs.retentionPeriod }}
+            - -storageDataPath=/victoria-logs-data
+            - -httpListenAddr=:9428
+          ports:
+            - name: http
+              containerPort: 9428
+              protocol: TCP
+          volumeMounts:
+            - name: server-volume
+              mountPath: /victoria-logs-data
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9428
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9428
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.victoriaLogs.resources | nindent 12 }}
+      {{- if not .Values.victoriaLogs.persistence.enabled }}
+      volumes:
+        - name: server-volume
+          emptyDir: {}
+      {{- end }}
+  {{- if .Values.victoriaLogs.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: server-volume
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.victoriaLogs.persistence.storageClassName }}
+        storageClassName: {{ .Values.victoriaLogs.persistence.storageClassName }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.victoriaLogs.persistence.size }}
+  {{- end }}
+{{- end }}
+

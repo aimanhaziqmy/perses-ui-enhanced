@@ -1,0 +1,62 @@
+{{- if .Values.vmauth.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmauth-victoria-metrics-auth
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: victoria-metrics-auth
+    app.kubernetes.io/instance: vmauth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: victoria-metrics-auth
+      app.kubernetes.io/instance: vmauth
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: victoria-metrics-auth
+        app.kubernetes.io/instance: vmauth
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/vmauth-secret.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: vmauth
+          image: "{{ .Values.vmauth.image.repository }}:{{ .Values.vmauth.image.tag }}"
+          imagePullPolicy: {{ .Values.vmauth.image.pullPolicy }}
+          args:
+            - -auth.config=/etc/vmauth/auth.yml
+            - -auth.config.reloadInterval=5s
+            - -httpListenAddr=:8427
+            - -loggerFormat=json
+            - -flagsAuthKey={{ .Values.vmauth.flagsAuthKey }}
+            - -pprofAuthKey={{ .Values.vmauth.flagsAuthKey }}
+          ports:
+            - name: http
+              containerPort: 8427
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vmauth
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8427
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8427
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.vmauth.resources | nindent 12 }}
+      volumes:
+        - name: config
+          secret:
+            secretName: vmauth-config
+{{- end }}
+

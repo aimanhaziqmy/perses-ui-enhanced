@@ -1,0 +1,27 @@
+apiVersion: v2
+name: perses-observability
+description: Unified Turnkey Umbrella Helm Chart for Kubernetes Observability (VictoriaLogs + VictoriaMetrics + Perses + Enhanced React UI)
+type: application
+version: 2.0.0
+appVersion: "0.55.1"
+keywords:
+  - observability
+  - logging
+  - metrics
+  - victorialogs
+  - victoriametrics
+  - perses
+  - kubernetes
+  - multitenant
+maintainers:
+  - name: perses-ui-enhanced maintainers
+dependencies:
+  - name: victoria-metrics-single
+    version: "0.51.0"
+    repository: "https://victoriametrics.github.io/helm-charts/"
+    condition: subcharts.victoriaMetricsEnabled
+    alias: victoriaMetrics
+  - name: perses
+    version: "0.24.0"
+    repository: "https://perses.github.io/helm-charts"
+    condition: subcharts.persesEnabled

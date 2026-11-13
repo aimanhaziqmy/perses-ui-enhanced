@@ -1,0 +1,21 @@
+{{- if .Values.vmauth.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmauth-victoria-metrics-auth
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: victoria-metrics-auth
+    app.kubernetes.io/instance: vmauth
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8427
+      targetPort: 8427
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: victoria-metrics-auth
+    app.kubernetes.io/instance: vmauth
+{{- end }}
+

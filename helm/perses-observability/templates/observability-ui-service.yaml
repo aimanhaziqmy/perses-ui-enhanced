@@ -1,0 +1,21 @@
+{{- if .Values.observabilityUi.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: perses-ui-enhanced
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: observability-ui
+spec:
+  type: {{ .Values.observabilityUi.service.type }}
+  selector:
+    app: perses-ui-enhanced
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: {{ .Values.observabilityUi.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}
+
