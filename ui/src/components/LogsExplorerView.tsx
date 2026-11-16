@@ -340,6 +340,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
       activeTab.rangeMinutes,
       activeTab.customStartIso ?? '',
       activeTab.customEndIso ?? '',
+      activeTab.selectedLevels.join(','),
       executedNonce,
     ],
     queryFn: () =>
@@ -349,6 +350,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
         endDate.toISOString(),
         stepSeconds,
         activeTarget!,
+        activeTab.selectedLevels,
       ),
     enabled: Boolean(activeTarget),
     retry: false,

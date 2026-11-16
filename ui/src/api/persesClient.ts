@@ -1534,12 +1534,58 @@ function stripTrailingSortPipes(pipePart: string): string {
   return pipePart.replace(/\|\s*sort\b[^|]*/gi, '').trim();
 }
 
+function scopeBucketCountsToSelectedLevels(
+  counts: Record<LogLevel, number>,
+  selectedLevels?: LogLevel[],
+): Record<LogLevel, number> {
+  if (!selectedLevels || selectedLevels.length === 0 || selectedLevels.length >= ALL_LOG_LEVELS.length) {
+    return counts;
+  }
+
+  const activeSet = new Set(selectedLevels);
+  const next: Record<LogLevel, number> = {
+    error: activeSet.has('error') ? counts.error : 0,
+    warning: activeSet.has('warning') ? counts.warning : 0,
+    info: activeSet.has('info') ? counts.info : 0,
+    debug: activeSet.has('debug') ? counts.debug : 0,
+    other: activeSet.has('other') ? counts.other : 0,
+  };
+
+  // Logs that matched the active level filter via _msg:i(...) without a structured level field
+  // land in `default as other`; re-attribute them to the active selected level(s) so "Other" stays 0.
+  if (!activeSet.has('other') && counts.other > 0) {
+    const activeKnown = ALL_LOG_LEVELS.filter((l): l is Exclude<LogLevel, 'other'> => l !== 'other' && activeSet.has(l));
+    if (activeKnown.length === 1) {
+      next[activeKnown[0]] += counts.other;
+    } else if (activeKnown.length > 1) {
+      const knownSum = activeKnown.reduce((acc, l) => acc + next[l], 0);
+      if (knownSum > 0) {
+        let distributed = 0;
+        for (let i = 0; i < activeKnown.length; i++) {
+          const lvl = activeKnown[i];
+          const share =
+            i === activeKnown.length - 1
+              ? counts.other - distributed
+              : Math.round((counts.other * next[lvl]) / knownSum);
+          next[lvl] += share;
+          distributed += share;
+        }
+      } else {
+        next[activeKnown[0]] += counts.other;
+      }
+    }
+  }
+
+  return next;
+}
+
 export async function queryVictoriaLogsLevelHistogram(
   query: string,
   startIso: string,
   endIso: string,
   stepSeconds: number,
   target: DatasourceTarget | string,
+  selectedLevels?: LogLevel[],
 ): Promise<{ buckets: VictoriaLogHitBucket[]; stacked: boolean }> {
   const safeStep = Math.max(1, stepSeconds);
   const startMs = new Date(startIso).getTime();
@@ -1616,7 +1662,8 @@ export async function queryVictoriaLogsLevelHistogram(
         for (let slot = alignedStart; slot <= endMs; slot += stepMs) {
           const d = new Date(slot);
           const dEnd = new Date(Math.min(endMs, slot + stepMs));
-          const counts = rowsBySlot.get(slot) ?? { error: 0, warning: 0, info: 0, debug: 0, other: 0 };
+          const rawCounts = rowsBySlot.get(slot) ?? { error: 0, warning: 0, info: 0, debug: 0, other: 0 };
+          const counts = scopeBucketCountsToSelectedLevels(rawCounts, selectedLevels);
           const count = counts.error + counts.warning + counts.info + counts.debug + counts.other;
           buckets.push({
             timestamp: new Date(Math.max(startMs, slot)).toISOString(),
