@@ -42,7 +42,7 @@ import Download from 'mdi-material-ui/Download';
 import PencilOutline from 'mdi-material-ui/PencilOutline';
 import Plus from 'mdi-material-ui/Plus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type {
@@ -60,6 +60,8 @@ import {
   classifyLogLevel,
   datasourceTargetKey,
   fetchLogPresetsConfig,
+  fetchVictoriaLogsChunked,
+  hasCustomLimitOrTransformPipe,
   injectLogsQLFilter,
   queryVictoriaLogs,
   queryVictoriaLogsLevelHistogram,
@@ -69,7 +71,7 @@ import {
 } from '../api/persesClient';
 import { PALETTE_TOKENS } from '../theme/persesTheme';
 import type { ExportFormat } from '../utils/exportRecords';
-import { exportRecordsToFile } from '../utils/exportRecords';
+import { exportRawJsonlLinesToFile, exportRecordsToFile } from '../utils/exportRecords';
 import { VictoriaLogsBrandIcon } from './BrandIcons';
 import { JsonViewer } from './JsonViewer';
 
@@ -226,6 +228,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
   const [showLogTime, setShowLogTime] = useState<boolean>(true);
   const [page, setPage] = useState<number>(0);
   const [rowsPerPage, setRowsPerPage] = useState<number>(30);
+  const [cursorStack, setCursorStack] = useState<string[]>([]);
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
   const [selectedLogIndex, setSelectedLogIndex] = useState<number | null>(null);
   const [drawerSize, setDrawerSize] = useState<'small' | 'medium' | 'large'>('medium');
@@ -245,6 +248,10 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'warning' | 'error'; text: string } | null>(null);
   const [exportAnchorEl, setExportAnchorEl] = useState<HTMLElement | null>(null);
   const [exportingLogs, setExportingLogs] = useState(false);
+  const [exportProgressCount, setExportProgressCount] = useState(0);
+  const exportAbortRef = useRef<AbortController | null>(null);
+
+  const LOG_BATCH_SIZE = 200;
 
   const { data: presets = DEFAULT_LOG_PRESETS } = useQuery<LogPresetItem[], Error>({
     queryKey: ['perses', 'log-presets-config'],
@@ -262,6 +269,8 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
     const id = `q${Date.now()}`;
     setTabs((prev) => [...prev, { id, label: `Query ${num}`, query: '*', rangeMinutes: 60, selectedLevels: [] }]);
     setActiveTabId(id);
+    setCursorStack([]);
+    setPage(0);
     setSelectedLogIndex(null);
     setExpandedRows({});
   };
@@ -285,6 +294,9 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab.rangeMinutes, activeTab.customStartIso, activeTab.customEndIso, executedNonce, activeTab.id]);
 
+  const cursorEndIso = cursorStack.length > 0 ? cursorStack[cursorStack.length - 1] : endDate.toISOString();
+  const canCursorPage = !hasCustomLimitOrTransformPipe(effectiveQuery);
+
   const {
     data: logsResult,
     isInitialLoading: loadingLogs,
@@ -300,10 +312,18 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
       activeTab.rangeMinutes,
       activeTab.customStartIso ?? '',
       activeTab.customEndIso ?? '',
+      cursorEndIso,
       executedNonce,
     ],
     queryFn: () =>
-      queryVictoriaLogs(effectiveQuery, 300, startDate.toISOString(), endDate.toISOString(), activeTarget!),
+      queryVictoriaLogs(
+        effectiveQuery,
+        LOG_BATCH_SIZE,
+        startDate.toISOString(),
+        cursorEndIso,
+        activeTarget!,
+        { sortDesc: true },
+      ),
     enabled: Boolean(activeTarget),
   });
 
@@ -381,6 +401,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
   }, [selectedLogIndex, entries.length]);
 
   const triggerQuery = () => {
+    setCursorStack([]);
     setPage(0);
     setExpandedRows({});
     setSelectedLogIndex(null);
@@ -391,6 +412,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
     const current = activeTab.selectedLevels;
     const next = current.includes(lvl) ? current.filter((l) => l !== lvl) : [...current, lvl];
     updateActiveTab({ selectedLevels: next });
+    setCursorStack([]);
     setPage(0);
     setExpandedRows({});
     setSelectedLogIndex(null);
@@ -399,6 +421,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
 
   const clearLevelFilters = () => {
     updateActiveTab({ selectedLevels: [] });
+    setCursorStack([]);
     setPage(0);
     setExpandedRows({});
     setSelectedLogIndex(null);
@@ -410,6 +433,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
       customStartIso: bucket.timestamp,
       customEndIso: bucket.endTimestamp,
     });
+    setCursorStack([]);
     setPage(0);
     setExpandedRows({});
     setSelectedLogIndex(null);
@@ -418,6 +442,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
 
   const clearCustomZoom = () => {
     updateActiveTab({ customStartIso: undefined, customEndIso: undefined });
+    setCursorStack([]);
     setPage(0);
     setExpandedRows({});
     setSelectedLogIndex(null);
@@ -434,9 +459,41 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
     const expr = `${field}:="${escaped}"`;
     const nextQuery = injectLogsQLFilter(activeTab.query, expr);
     updateActiveTab({ query: nextQuery });
+    setCursorStack([]);
     setPage(0);
     setSelectedLogIndex(null);
     setExecutedNonce((n) => n + 1);
+  };
+
+  const oldestEntryTs = entries.length > 0 ? String(entries[entries.length - 1]._time ?? '').trim() : '';
+  const hasOlderBatch =
+    canCursorPage &&
+    entries.length >= LOG_BATCH_SIZE &&
+    Boolean(oldestEntryTs) &&
+    oldestEntryTs > startDate.toISOString();
+
+  const handleLoadOlderBatch = () => {
+    if (!hasOlderBatch) return;
+    setCursorStack((prev) => [...prev, oldestEntryTs]);
+    setPage(0);
+    setExpandedRows({});
+    setSelectedLogIndex(null);
+  };
+
+  const handleLoadNewerBatch = () => {
+    if (cursorStack.length === 0) return;
+    setCursorStack((prev) => prev.slice(0, -1));
+    setPage(0);
+    setExpandedRows({});
+    setSelectedLogIndex(null);
+  };
+
+  const handleResetToLatestBatch = () => {
+    if (cursorStack.length === 0) return;
+    setCursorStack([]);
+    setPage(0);
+    setExpandedRows({});
+    setSelectedLogIndex(null);
   };
 
   const handleCopyJson = async () => {
@@ -450,35 +507,65 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
     }
   };
 
-  const handleExportLogs = async (format: ExportFormat, scope: 'loaded' | 'full') => {
+  const handleExportLogs = async (
+    format: ExportFormat,
+    scope: 'loaded' | 'stream20k' | 'stream50k',
+  ) => {
     setExportAnchorEl(null);
     if (!activeTarget) return;
-    setExportingLogs(true);
-    try {
-      const records =
-        scope === 'loaded'
-          ? entries
-          : (
-              await queryVictoriaLogs(
-                effectiveQuery,
-                5000,
-                startDate.toISOString(),
-                endDate.toISOString(),
-                activeTarget,
-              )
-            ).entries;
-      const count = exportRecordsToFile(records as Record<string, unknown>[], format, 'victorialogs-export');
+
+    if (scope === 'loaded') {
+      const count = exportRecordsToFile(entries as Record<string, unknown>[], format, 'victorialogs-batch');
       setFeedback({
         kind: 'success',
         text: `Exported ${count.toLocaleString()} log record${count === 1 ? '' : 's'} as ${format.toUpperCase()}.`,
       });
-    } catch (err) {
-      setFeedback({
-        kind: 'error',
-        text: `Export failed: ${err instanceof Error ? err.message : String(err)}`,
+      return;
+    }
+
+    const maxRows = scope === 'stream50k' ? 50000 : 20000;
+    const rawLinesOnly = format === 'jsonl';
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
+    setExportingLogs(true);
+    setExportProgressCount(0);
+
+    try {
+      const result = await fetchVictoriaLogsChunked({
+        query: effectiveQuery,
+        startIso: startDate.toISOString(),
+        endIso: endDate.toISOString(),
+        target: activeTarget,
+        maxRows,
+        chunkSize: 1000,
+        rawLinesOnly,
+        signal: controller.signal,
+        onProgress: (count) => setExportProgressCount(count),
       });
+
+      const exportedCount = rawLinesOnly
+        ? exportRawJsonlLinesToFile(result.rawLines ?? [], 'victorialogs-export')
+        : exportRecordsToFile((result.entries ?? []) as Record<string, unknown>[], format, 'victorialogs-export');
+
+      setFeedback({
+        kind: result.truncatedByMax ? 'warning' : 'success',
+        text: result.truncatedByMax
+          ? `Exported ${exportedCount.toLocaleString()} logs (safety cap ${maxRows.toLocaleString()} reached). Narrow the time window or query to download older logs.`
+          : `Stream-exported ${exportedCount.toLocaleString()} log record${exportedCount === 1 ? '' : 's'} as ${format.toUpperCase()}.`,
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setFeedback({ kind: 'warning', text: 'Log export cancelled.' });
+      } else {
+        setFeedback({
+          kind: 'error',
+          text: `Export failed: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
     } finally {
+      exportAbortRef.current = null;
       setExportingLogs(false);
+      setExportProgressCount(0);
     }
   };
 
@@ -630,6 +717,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
             value={activeTab.id}
             onChange={(_, val: string) => {
               setActiveTabId(val);
+              setCursorStack([]);
               setPage(0);
             }}
             sx={{ minHeight: 40, '& .MuiTab-root': { minHeight: 40, py: 0.75, fontSize: 13 } }}
@@ -649,6 +737,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 value={selectedTargetKey}
                 onChange={(e) => {
                   setSelectedTargetKey(e.target.value);
+                  setCursorStack([]);
                   setPage(0);
                   setExecutedNonce((n) => n + 1);
                 }}
@@ -678,6 +767,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 color={activeTab.query === preset.query ? 'primary' : 'default'}
                 onClick={() => {
                   updateActiveTab({ query: preset.query });
+                  setCursorStack([]);
                   setPage(0);
                   setExecutedNonce((n) => n + 1);
                 }}
@@ -756,6 +846,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                     customStartIso: undefined,
                     customEndIso: undefined,
                   });
+                  setCursorStack([]);
                   setPage(0);
                   setExpandedRows({});
                   setSelectedLogIndex(null);
@@ -1132,15 +1223,28 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
               onClick={(e) => setExportAnchorEl(e.currentTarget)}
               sx={{ py: 0.35, fontSize: 12 }}
             >
-              {exportingLogs ? 'Exporting...' : 'Export'}
+              {exportingLogs
+                ? `Exporting${exportProgressCount > 0 ? ` (${exportProgressCount.toLocaleString()})` : '...'}`
+                : 'Export'}
             </Button>
+            {exportingLogs && (
+              <Button
+                size="small"
+                color="error"
+                variant="text"
+                onClick={() => exportAbortRef.current?.abort()}
+                sx={{ py: 0.35, fontSize: 11.5, minWidth: 0 }}
+              >
+                Cancel
+              </Button>
+            )}
             <Menu
               anchorEl={exportAnchorEl}
               open={Boolean(exportAnchorEl)}
               onClose={() => setExportAnchorEl(null)}
             >
               <ListSubheader sx={{ lineHeight: '28px', fontSize: 11 }}>
-                Current results ({entries.length} rows)
+                Current batch ({entries.length} rows)
               </ListSubheader>
               <MenuItem disabled={entries.length === 0} onClick={() => void handleExportLogs('csv', 'loaded')}>
                 Export current as CSV
@@ -1152,16 +1256,16 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 Export current as JSONL (NDJSON)
               </MenuItem>
               <ListSubheader sx={{ lineHeight: '28px', fontSize: 11 }}>
-                Full time range (up to 5,000 rows)
+                Chunked stream (1,000/batch — zero timeout)
               </ListSubheader>
-              <MenuItem onClick={() => void handleExportLogs('csv', 'full')}>
-                Export full range as CSV
+              <MenuItem onClick={() => void handleExportLogs('csv', 'stream20k')}>
+                Stream up to 20,000 logs as CSV
               </MenuItem>
-              <MenuItem onClick={() => void handleExportLogs('json', 'full')}>
-                Export full range as JSON
+              <MenuItem onClick={() => void handleExportLogs('json', 'stream20k')}>
+                Stream up to 20,000 logs as JSON
               </MenuItem>
-              <MenuItem onClick={() => void handleExportLogs('jsonl', 'full')}>
-                Export full range as JSONL (NDJSON)
+              <MenuItem onClick={() => void handleExportLogs('jsonl', 'stream50k')}>
+                Stream up to 50,000 logs as JSONL (low RAM)
               </MenuItem>
             </Menu>
           </Stack>
@@ -1420,18 +1524,70 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
           </TableContainer>
         )}
 
-        <TablePagination
-          component="div"
-          count={entries.length}
-          page={page}
-          onPageChange={(_, p) => setPage(p)}
-          rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={(e) => {
-            setRowsPerPage(parseInt(e.target.value, 10));
-            setPage(0);
+        <Box
+          sx={{
+            px: 2,
+            py: 0.5,
+            borderTop: `1px solid ${tokens.borderSubtle}`,
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1,
           }}
-          rowsPerPageOptions={[15, 30, 50, 100]}
-        />
+        >
+          {canCursorPage ? (
+            <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`Batch #${cursorStack.length + 1} · up to ${LOG_BATCH_SIZE}/slice`}
+                sx={{ fontFamily: 'monospace', fontSize: 11 }}
+              />
+              <Button
+                size="small"
+                variant="text"
+                disabled={cursorStack.length === 0 || fetchingLogs}
+                onClick={handleResetToLatestBatch}
+              >
+                Latest
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={cursorStack.length === 0 || fetchingLogs}
+                onClick={handleLoadNewerBatch}
+              >
+                ← Newer
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={!hasOlderBatch || fetchingLogs}
+                onClick={handleLoadOlderBatch}
+              >
+                Older →
+              </Button>
+            </Stack>
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              Custom pipe query active (cursor stepping disabled)
+            </Typography>
+          )}
+
+          <TablePagination
+            component="div"
+            count={entries.length}
+            page={page}
+            onPageChange={(_, p) => setPage(p)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(e) => {
+              setRowsPerPage(parseInt(e.target.value, 10));
+              setPage(0);
+            }}
+            rowsPerPageOptions={[15, 30, 50, 100]}
+          />
+        </Box>
       </Card>
 
       {/* Create / Edit Log Preset Dialog */}

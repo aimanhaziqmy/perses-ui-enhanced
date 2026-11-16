@@ -78,6 +78,25 @@ export function serializeRecords(
   };
 }
 
+export function exportRawJsonlLinesToFile(rawLines: string[], filenamePrefix: string): number {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = `${filenamePrefix}-${stamp}.jsonl`;
+  const parts: BlobPart[] = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    parts.push(i === 0 ? rawLines[i] : `\n${rawLines[i]}`);
+  }
+  const blob = new Blob(parts, { type: 'application/x-ndjson;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+  return rawLines.length;
+}
+
 export function exportRecordsToFile(
   records: Record<string, unknown>[],
   format: ExportFormat,
