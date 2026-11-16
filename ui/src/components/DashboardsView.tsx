@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -11,6 +12,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   IconButton,
   InputLabel,
   MenuItem,
@@ -36,6 +38,7 @@ import { useNavigate } from 'react-router-dom';
 
 import {
   ForbiddenError,
+  countUnsupportedMigratedQueries,
   createDashboard,
   createProject,
   datasourceTargetKey,
@@ -44,6 +47,9 @@ import {
   fetchDashboard,
   fetchDashboards,
   fetchProjects,
+  isGrafanaDashboardJson,
+  migrateGrafanaDashboard,
+  unwrapGrafanaDashboard,
   updateDashboard,
   useDatasourceTargets,
   usePersesDatasourceApi,
@@ -60,7 +66,7 @@ export function DashboardsView() {
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [selectedDashboardName, setSelectedDashboardName] = useState<string>('');
   const [startInEditMode, setStartInEditMode] = useState<boolean>(false);
-  const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [feedback, setFeedback] = useState<{ kind: 'success' | 'warning' | 'error'; text: string } | null>(null);
 
   // Project create/delete dialogs
   const [createProjOpen, setCreateProjOpen] = useState(false);
@@ -78,9 +84,23 @@ export function DashboardsView() {
   const [cloneSourceProject, setCloneSourceProject] = useState('');
   const [cloneSourceDashboard, setCloneSourceDashboard] = useState('');
   const [importJsonText, setImportJsonText] = useState('');
+  const [useDefaultDatasource, setUseDefaultDatasource] = useState(true);
+  const [migratingGrafana, setMigratingGrafana] = useState(false);
   const [dashError, setDashError] = useState<string | null>(null);
   const [dashSaving, setDashSaving] = useState(false);
   const [deleteDashOpen, setDeleteDashOpen] = useState(false);
+
+  const detectedImportFormat = useMemo<'empty' | 'grafana' | 'perses' | 'invalid'>(() => {
+    const trimmed = importJsonText.trim();
+    if (!trimmed) return 'empty';
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'invalid';
+      return isGrafanaDashboardJson(parsed as Record<string, unknown>) ? 'grafana' : 'perses';
+    } catch {
+      return 'invalid';
+    }
+  }, [importJsonText]);
 
   const {
     data: projects,
@@ -257,6 +277,44 @@ export function DashboardsView() {
     reader.readAsText(file);
   };
 
+  const handlePreviewMigrateGrafana = async () => {
+    setDashError(null);
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(importJsonText) as Record<string, unknown>;
+    } catch {
+      setDashError('Invalid JSON payload.');
+      return;
+    }
+    setMigratingGrafana(true);
+    try {
+      const migrated = await migrateGrafanaDashboard(parsed, useDefaultDatasource);
+      const unwrapped = unwrapGrafanaDashboard(parsed);
+      if (!dashName.trim()) {
+        const candidateSlug = String(migrated.metadata?.name || unwrapped.uid || unwrapped.title || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9._-]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+        if (candidateSlug) setDashName(candidateSlug);
+      }
+      if (!dashDisplayName.trim() && migrated.spec?.display?.name) {
+        setDashDisplayName(migrated.spec.display.name);
+      }
+      setImportJsonText(JSON.stringify(migrated, null, 2));
+      const unsupported = countUnsupportedMigratedQueries(migrated);
+      if (unsupported > 0) {
+        setDashError(
+          `Converted to Perses JSON, but ${unsupported} panel query slot(s) could not be auto-translated (marked "migration_from_grafana_not_supported"). You can still create the dashboard and adjust those queries in Edit mode.`,
+        );
+      }
+    } catch (err) {
+      setDashError(`Grafana migration failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setMigratingGrafana(false);
+    }
+  };
+
   const handleCreateDashboard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProject) return;
@@ -321,29 +379,62 @@ export function DashboardsView() {
         return;
       }
     } else {
-      // Import Perses JSON
+      // Import Perses JSON or auto-migrate Grafana JSON
       let parsed: Record<string, unknown>;
       try {
         parsed = JSON.parse(importJsonText) as Record<string, unknown>;
       } catch {
-        setDashError('Invalid JSON payload. Paste a valid Perses Dashboard JSON object.');
+        setDashError('Invalid JSON payload. Paste a valid Perses or Grafana Dashboard JSON object.');
         return;
       }
-      const rawSpec = (parsed.spec && typeof parsed.spec === 'object' ? parsed.spec : parsed) as DashboardResource['spec'];
-      const rawMeta = (parsed.metadata && typeof parsed.metadata === 'object'
-        ? parsed.metadata
-        : {}) as Partial<DashboardResource['metadata']>;
-      const slug = dashName.trim() || String(rawMeta.name ?? '').trim();
+
+      let sourceDashboard: DashboardResource | null = null;
+      let unsupportedCount = 0;
+
+      if (isGrafanaDashboardJson(parsed)) {
+        setDashSaving(true);
+        try {
+          sourceDashboard = await migrateGrafanaDashboard(parsed, useDefaultDatasource);
+          unsupportedCount = countUnsupportedMigratedQueries(sourceDashboard);
+        } catch (err) {
+          setDashSaving(false);
+          setDashError(`Grafana migration failed: ${err instanceof Error ? err.message : String(err)}`);
+          return;
+        }
+      }
+
+      const rawMeta = (
+        sourceDashboard?.metadata ??
+        (parsed.metadata && typeof parsed.metadata === 'object' ? parsed.metadata : {})
+      ) as Partial<DashboardResource['metadata']>;
+      const rawSpec = (
+        sourceDashboard?.spec ??
+        (parsed.spec && typeof parsed.spec === 'object' ? parsed.spec : parsed)
+      ) as DashboardResource['spec'];
+
+      const unwrappedGrafana = unwrapGrafanaDashboard(parsed);
+      const fallbackSlugSource = String(
+        rawMeta.name || unwrappedGrafana.uid || unwrappedGrafana.title || '',
+      )
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+
+      const slug = dashName.trim() || String(rawMeta.name ?? '').trim() || fallbackSlugSource;
       if (!slug) {
-        setDashError('Dashboard ID is required (enter an ID above or include metadata.name in JSON).');
+        setDashSaving(false);
+        setDashError('Dashboard ID is required (enter an ID above or include metadata.name / uid in JSON).');
         return;
       }
       if (!/^[a-zA-Z0-9._-]+$/.test(slug)) {
+        setDashSaving(false);
         setDashError('Dashboard ID can only contain letters, numbers, ".", "_", and "-".');
         return;
       }
       if (!rawSpec || typeof rawSpec !== 'object' || !rawSpec.panels || !rawSpec.layouts) {
-        setDashError('JSON must contain a Perses dashboard spec with "panels" and "layouts".');
+        setDashSaving(false);
+        setDashError('JSON must contain a Perses dashboard spec with "panels" and "layouts", or a Grafana dashboard JSON.');
         return;
       }
       payload = {
@@ -358,6 +449,32 @@ export function DashboardsView() {
             : rawSpec.display ?? { name: slug },
         },
       };
+
+      unsupportedCount = unsupportedCount || countUnsupportedMigratedQueries(payload);
+      setDashSaving(true);
+      try {
+        const created = await createDashboard(selectedProject, payload);
+        await queryClient.invalidateQueries({ queryKey: ['perses', 'dashboards', selectedProject] });
+        setSelectedDashboardName(created.metadata.name);
+        setStartInEditMode(unsupportedCount > 0);
+        setCreateDashOpen(false);
+        setFeedback(
+          unsupportedCount > 0
+            ? {
+                kind: 'warning',
+                text: `Imported dashboard "${getResourceDisplayName(created)}", but ${unsupportedCount} query slot(s) need manual update in Edit mode.`,
+              }
+            : {
+                kind: 'success',
+                text: `Created dashboard "${getResourceDisplayName(created)}" in project "${selectedProject}".`,
+              },
+        );
+      } catch (err) {
+        setDashError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setDashSaving(false);
+      }
+      return;
     }
 
     setDashSaving(true);
@@ -789,24 +906,67 @@ export function DashboardsView() {
 
               {createMode === 'import' && (
                 <Stack spacing={1.25}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
                     <Typography variant="caption" color="text.secondary">
-                      Paste a Perses Dashboard JSON document or upload a <code>.json</code> file.
+                      Paste a <strong>Perses</strong> or <strong>Grafana</strong> Dashboard JSON document, or upload a{' '}
+                      <code>.json</code> file.
                     </Typography>
-                    <Button size="small" variant="outlined" component="label">
-                      Upload .json
-                      <input type="file" hidden accept="application/json,.json" onChange={handleImportFile} />
-                    </Button>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      {detectedImportFormat === 'grafana' && (
+                        <Chip size="small" color="info" variant="outlined" label="Grafana JSON detected" />
+                      )}
+                      {detectedImportFormat === 'perses' && (
+                        <Chip size="small" color="success" variant="outlined" label="Perses JSON detected" />
+                      )}
+                      <Button size="small" variant="outlined" component="label">
+                        Upload .json
+                        <input type="file" hidden accept="application/json,.json" onChange={handleImportFile} />
+                      </Button>
+                    </Stack>
                   </Stack>
+
+                  {detectedImportFormat === 'grafana' && (
+                    <Alert
+                      severity="info"
+                      action={
+                        <Button
+                          size="small"
+                          color="inherit"
+                          disabled={migratingGrafana || dashSaving}
+                          onClick={() => void handlePreviewMigrateGrafana()}
+                        >
+                          {migratingGrafana ? 'Converting...' : 'Convert & Preview'}
+                        </Button>
+                      }
+                    >
+                      Grafana JSON will be auto-converted via Perses <code>/api/migrate</code>.
+                    </Alert>
+                  )}
+
                   <TextField
                     multiline
                     minRows={6}
                     maxRows={12}
-                    placeholder='{"kind": "Dashboard", "metadata": {"name": "my-dash"}, "spec": { ... }}'
+                    placeholder='Paste Perses JSON ({"kind": "Dashboard", ...}) or Grafana JSON ({"title": "...", "panels": [...]})'
                     value={importJsonText}
                     onChange={(e) => setImportJsonText(e.target.value)}
                     fullWidth
                     InputProps={{ sx: { fontFamily: 'monospace', fontSize: 12 } }}
+                  />
+
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={useDefaultDatasource}
+                        onChange={(e) => setUseDefaultDatasource(e.target.checked)}
+                      />
+                    }
+                    label={
+                      <Typography variant="caption" color="text.secondary">
+                        Map Grafana panel targets to cluster default Perses datasources when migrating
+                      </Typography>
+                    }
                   />
                 </Stack>
               )}
