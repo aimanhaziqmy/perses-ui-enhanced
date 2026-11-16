@@ -672,24 +672,6 @@ export function DashboardsView({
     }
   };
 
-  if (loadingProjects) {
-    return (
-      <Stack alignItems="center" justifyContent="center" sx={{ py: 8 }}>
-        <CircularProgress />
-      </Stack>
-    );
-  }
-
-  if (projectsError) {
-    return (
-      <Alert severity={projectsError instanceof ForbiddenError ? 'warning' : 'error'}>
-        {projectsError instanceof ForbiddenError
-          ? projectsError.message
-          : `Failed to load Perses projects: ${projectsError.message}`}
-      </Alert>
-    );
-  }
-
   const normalizedSearch = searchText.trim().toLowerCase();
   const filteredProjectRows = useMemo(() => {
     const list = projects ?? [];
@@ -724,6 +706,24 @@ export function DashboardsView({
     const start = projectPage * projectsPerPage;
     return filteredProjectRows.slice(start, start + projectsPerPage);
   }, [filteredProjectRows, projectPage, projectsPerPage]);
+
+  if (loadingProjects) {
+    return (
+      <Stack alignItems="center" justifyContent="center" sx={{ py: 8 }}>
+        <CircularProgress />
+      </Stack>
+    );
+  }
+
+  if (projectsError) {
+    return (
+      <Alert severity={projectsError instanceof ForbiddenError ? 'warning' : 'error'}>
+        {projectsError instanceof ForbiddenError
+          ? projectsError.message
+          : `Failed to load Perses projects: ${projectsError.message}`}
+      </Alert>
+    );
+  }
 
   const toggleProjectExpand = (projName: string) => {
     setExpandedProjects((prev) => ({ ...prev, [projName]: !prev[projName] }));
