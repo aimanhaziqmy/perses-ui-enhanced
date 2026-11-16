@@ -6,26 +6,28 @@ An enhanced, Nightingale-inspired open-source React UI shell and turnkey Kuberne
 
 ## Architecture Overview
 
-```
-                    +-------------------------------------------+
-                    |      perses-ui-enhanced (Nginx :8080)     |
-                    |  React 18 · TypeScript · MUI v6 · Vite 6  |
-                    +------+------------------+-----------------+
-                           |                  |
-            Static SPA     |                  | /api/*, /proxy/*, /plugins/*
-                           v                  v
-                +------------------+   +----------------------------------+
-                | Browser Client   |   |  Perses Go Backend (:8080)       |
-                | - Light/Dark UI  |   |  - Security & Native/OIDC Auth   |
-                | - Site Settings  |   |  - GlobalVariables & Provisioning|
-                | - Logs Explorer  |   |  - Remote Plugin Federation      |
-                +------------------+   +--------+----------------+--------+
-                                                |                |
-                                                v                v
-                                       +---------------+  +---------------+
-                                       |VictoriaMetrics|  | VictoriaLogs  |
-                                       | PromQL (:8428)|  | LogsQL (:9428)|
-                                       +---------------+  +---------------+
+```mermaid
+flowchart LR
+  User["Browser Client (Light/Dark UI)"] -->|HTTPS| GW["Kubernetes Gateway API (HTTPRoute / ListenerSet)"]
+  GW -->|HTTP :8080| UI["perses-ui-enhanced (Nginx + React SPA)"]
+
+  subgraph Auth ["Authentication & RBAC"]
+    IdP["External OIDC / OAuth2 IdP (Keycloak, Okta, Google, GitHub)"]
+    Native["Perses Native Auth (Fallback Admin)"]
+  end
+
+  UI -->|"/api/*, /proxy/*, /plugins/*"| Perses["Perses Go Backend (:8080)"]
+  Perses <-->|"OIDC / OAuth2 Code + PKCE"| IdP
+  Perses <--> Native
+  Perses -->|"/perses (GlobalVariables, Dashboards, Users, Roles)"| PVC["Perses Storage (PVC)"]
+
+  subgraph Telemetry ["Cluster Telemetry & Ingestion"]
+    Collectors["Log Collectors & Event Exporter"] --> VL["VictoriaLogs (:9428)"]
+    Exporters["Node / DCGM / Kube-State Exporters"] --> VM["VictoriaMetrics (:8428)"]
+  end
+
+  Perses -->|"LogsQL (Switch Histogram, Cursor Paging, Streaming)"| VL
+  Perses -->|"PromQL (Dashboards, Hosts, Alert Rules)"| VM
 ```
 
 - **Untouched Upstream Perses Backend**: Uses official `persesdev/perses` (`v0.55.1+`) for authentication, RBAC, dashboards, projects, datasources, proxy routing, and remote plugin serving.

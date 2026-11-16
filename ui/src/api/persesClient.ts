@@ -1161,14 +1161,10 @@ const DEBUG_FIELDS_LOGSQL =
 const INFO_FIELDS_LOGSQL =
   '(level:~"(?i)(info|information|notice|normal)" OR severity:~"(?i)(info|information|notice|normal)" OR lvl:~"(?i)(info|information|notice|normal)" OR log.level:~"(?i)(info|information|notice|normal)" OR type:~"(?i)(info|normal)")';
 
-const ERR_LOGSQL =
-  '(level:~"(?i)(err|fatal|crit|panic)" OR severity:~"(?i)(err|fatal|crit|panic)" OR lvl:~"(?i)(err|fatal|crit|panic)" OR log.level:~"(?i)(err|fatal|crit|panic)" OR type:~"(?i)(err|fatal|crit|panic)" OR _msg:~"(?i)\\\\b(error|err|fatal|critical|panic|oomkilled|exception)\\\\b")';
-const WARN_LOGSQL =
-  '(level:~"(?i)(warn|warning)" OR severity:~"(?i)(warn|warning)" OR lvl:~"(?i)(warn|warning)" OR log.level:~"(?i)(warn|warning)" OR type:~"(?i)(warn|warning)" OR _msg:~"(?i)\\\\b(warn|warning)\\\\b")';
-const DEBUG_LOGSQL =
-  '(level:~"(?i)(debug|trace)" OR severity:~"(?i)(debug|trace)" OR lvl:~"(?i)(debug|trace)" OR log.level:~"(?i)(debug|trace)" OR type:~"(?i)(debug|trace)" OR _msg:~"(?i)\\\\b(debug|trace)\\\\b")';
-const INFO_LOGSQL =
-  '(level:~"(?i)(info|information|notice|normal)" OR severity:~"(?i)(info|information|notice|normal)" OR lvl:~"(?i)(info|information|notice|normal)" OR log.level:~"(?i)(info|information|notice|normal)" OR type:~"(?i)(info|normal)" OR _msg:~"(?i)\\\\b(info|information)\\\\b")';
+const ERR_LOGSQL = `(${ERR_FIELDS_LOGSQL.slice(1, -1)} OR _msg:i(error) OR _msg:i(err) OR _msg:i(fatal) OR _msg:i(critical) OR _msg:i(panic) OR _msg:i(oomkilled) OR _msg:i(exception))`;
+const WARN_LOGSQL = `(${WARN_FIELDS_LOGSQL.slice(1, -1)} OR _msg:i(warn) OR _msg:i(warning))`;
+const DEBUG_LOGSQL = `(${DEBUG_FIELDS_LOGSQL.slice(1, -1)} OR _msg:i(debug) OR _msg:i(trace))`;
+const INFO_LOGSQL = `(${INFO_FIELDS_LOGSQL.slice(1, -1)} OR _msg:i(info) OR _msg:i(information))`;
 
 export function classifyLogLevel(entry: VictoriaLogEntry): LogLevel {
   const structured = [entry.level, entry.severity, entry.lvl, entry['log.level'], entry.type]
@@ -1198,18 +1194,41 @@ export function buildLogsQLLevelFilter(selectedLevels: LogLevel[]): string | nul
     return null;
   }
 
-  const exprMap: Record<LogLevel, string> = {
-    error: ERR_LOGSQL,
-    warning: `(${WARN_LOGSQL} AND NOT ${ERR_LOGSQL})`,
-    debug: `(${DEBUG_LOGSQL} AND NOT (${ERR_LOGSQL} OR ${WARN_LOGSQL}))`,
-    info: `(${INFO_LOGSQL} AND NOT (${ERR_LOGSQL} OR ${WARN_LOGSQL} OR ${DEBUG_LOGSQL}))`,
-    other: `NOT (${ERR_LOGSQL} OR ${WARN_LOGSQL} OR ${DEBUG_LOGSQL} OR ${INFO_LOGSQL})`,
-  };
+  const selected = new Set(unique);
+  const priorityOrder: Array<{ level: Exclude<LogLevel, 'other'>; expr: string }> = [
+    { level: 'error', expr: ERR_LOGSQL },
+    { level: 'warning', expr: WARN_LOGSQL },
+    { level: 'debug', expr: DEBUG_LOGSQL },
+    { level: 'info', expr: INFO_LOGSQL },
+  ];
 
-  if (unique.length === 1) {
-    return exprMap[unique[0]];
+  // If "other" is selected alongside some known levels, it is equivalent to excluding the unselected known levels.
+  if (selected.has('other')) {
+    const unselectedKnown = priorityOrder.filter((p) => !selected.has(p.level));
+    if (unselectedKnown.length === 0) return null;
+    const excludedUnion =
+      unselectedKnown.length === 1
+        ? unselectedKnown[0].expr
+        : `(${unselectedKnown.map((p) => p.expr).join(' OR ')})`;
+    return `NOT ${excludedUnion}`;
   }
-  return `(${unique.map((lvl) => exprMap[lvl]).join(' OR ')})`;
+
+  const clauses: string[] = [];
+  for (let i = 0; i < priorityOrder.length; i++) {
+    const { level, expr } = priorityOrder[i];
+    if (!selected.has(level)) continue;
+    // Only exclude higher-priority levels that are NOT already selected.
+    const unselectedHigher = priorityOrder.slice(0, i).filter((p) => !selected.has(p.level));
+    if (unselectedHigher.length === 0) {
+      clauses.push(expr);
+    } else if (unselectedHigher.length === 1) {
+      clauses.push(`(${expr} AND NOT ${unselectedHigher[0].expr})`);
+    } else {
+      clauses.push(`(${expr} AND NOT (${unselectedHigher.map((p) => p.expr).join(' OR ')}))`);
+    }
+  }
+
+  return clauses.length === 1 ? clauses[0] : `(${clauses.join(' OR ')})`;
 }
 
 function splitFirstUnquotedPipe(query: string): { filterPart: string; pipePart: string } {
