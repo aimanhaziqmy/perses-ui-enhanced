@@ -837,28 +837,112 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                   {effectiveBuckets.map((bucket, idx) => {
                     const total = bucket.count;
                     const totalHeightPx = total > 0 ? Math.max(4, Math.round((total / maxBucketCount) * 68)) : 2;
+                    const tooltipBg = mode === 'light' ? '#FFFFFF' : '#0B1220';
+                    const tooltipBorder = mode === 'light' ? '#CBD5E1' : 'rgba(148, 163, 184, 0.32)';
                     const tooltipText = (
-                      <Box sx={{ fontSize: 11.5 }}>
-                        <div>
-                          <strong>
-                            {formatCompactTs(bucket.timestamp)} ~ {formatCompactTs(bucket.endTimestamp)}
-                          </strong>
-                        </div>
-                        <div>Total: {total} logs (click to zoom)</div>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+                      <Box sx={{ minWidth: 215, p: 0.25 }}>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 700,
+                            fontFamily: 'monospace',
+                            color: tokens.textPrimary,
+                            fontSize: 11.5,
+                          }}
+                        >
+                          {formatCompactTs(bucket.timestamp)} ~ {formatCompactTs(bucket.endTimestamp)}
+                        </Typography>
+                        <Stack
+                          direction="row"
+                          justifyContent="space-between"
+                          alignItems="center"
+                          sx={{
+                            mt: 0.4,
+                            mb: 0.75,
+                            pb: 0.6,
+                            borderBottom: `1px solid ${tokens.borderSubtle}`,
+                          }}
+                        >
+                          <Typography variant="caption" sx={{ fontWeight: 600, color: tokens.textPrimary }}>
+                            Total: {total.toLocaleString()} logs
+                          </Typography>
+                          <Typography variant="caption" sx={{ fontSize: 10.5, color: tokens.textSecondary }}>
+                            Click bar to zoom
+                          </Typography>
+                        </Stack>
+                        <Stack spacing={0.35}>
                           {ALL_LOG_LEVELS.map((lvl) => (
-                            <span key={lvl} style={{ color: LEVEL_META[lvl].color, fontWeight: 600 }}>
-                              {LEVEL_META[lvl].short}: {bucket.counts[lvl]}
-                            </span>
+                            <Stack
+                              key={lvl}
+                              direction="row"
+                              justifyContent="space-between"
+                              alignItems="center"
+                              spacing={2}
+                            >
+                              <Stack direction="row" spacing={0.75} alignItems="center">
+                                <Box
+                                  sx={{
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: '50%',
+                                    bgcolor: LEVEL_META[lvl].color,
+                                    flexShrink: 0,
+                                  }}
+                                />
+                                <Typography variant="caption" sx={{ fontSize: 11.5, color: tokens.textSecondary }}>
+                                  {LEVEL_META[lvl].label}
+                                </Typography>
+                              </Stack>
+                              <Typography
+                                variant="caption"
+                                sx={{
+                                  fontSize: 11.5,
+                                  fontWeight: 700,
+                                  fontFamily: 'monospace',
+                                  color: tokens.textPrimary,
+                                }}
+                              >
+                                {bucket.counts[lvl].toLocaleString()}
+                              </Typography>
+                            </Stack>
                           ))}
-                        </div>
+                        </Stack>
                       </Box>
                     );
 
                     const orderedLevels: LogLevel[] = ['error', 'warning', 'info', 'debug', 'other'];
 
                     return (
-                      <Tooltip key={`${bucket.timestamp}-${idx}`} title={tooltipText}>
+                      <Tooltip
+                        key={`${bucket.timestamp}-${idx}`}
+                        title={tooltipText}
+                        arrow
+                        slotProps={{
+                          tooltip: {
+                            sx: {
+                              bgcolor: tooltipBg,
+                              color: tokens.textPrimary,
+                              border: `1px solid ${tooltipBorder}`,
+                              borderRadius: 1.75,
+                              p: 1.25,
+                              maxWidth: 320,
+                              boxShadow:
+                                mode === 'light'
+                                  ? '0 10px 28px -4px rgba(15, 23, 42, 0.16)'
+                                  : '0 12px 32px -4px rgba(0, 0, 0, 0.72)',
+                            },
+                          },
+                          arrow: {
+                            sx: {
+                              color: tooltipBg,
+                              '&::before': {
+                                border: `1px solid ${tooltipBorder}`,
+                              },
+                            },
+                          },
+                        }}
+                      >
                         <Box
                           onClick={() => handleZoomToBucket(bucket)}
                           sx={{

@@ -205,6 +205,26 @@ export function createPersesTheme(mode: ThemeMode): Theme {
           },
         },
       },
+      MuiTooltip: {
+        styleOverrides: {
+          tooltip: {
+            backgroundColor: mode === 'light' ? '#0F172A' : '#0B1220',
+            color: '#F8FAFC',
+            border: '1px solid rgba(148, 163, 184, 0.28)',
+            borderRadius: 8,
+            fontSize: '0.75rem',
+            lineHeight: 1.45,
+            padding: '6px 10px',
+            boxShadow:
+              mode === 'light'
+                ? '0 10px 25px -5px rgba(15, 23, 42, 0.22)'
+                : '0 12px 28px -4px rgba(0, 0, 0, 0.65)',
+          },
+          arrow: {
+            color: mode === 'light' ? '#0F172A' : '#0B1220',
+          },
+        },
+      },
     },
   });
 }
