@@ -64,6 +64,12 @@ helm upgrade --install observability . \
 | `perses.persistence.storageClass` | unset | StorageClass for Perses PVC (omitted = cluster default; set explicitly if needed) |
 | `persesAuth.encryptionKey` | `ChangeMe...` | 32-byte AES-256 encryption key for Perses tokens |
 | `persesAuth.nativeAdminPassword` | `changeme` | Provisioned native `admin` user password |
+| `persesProvisioning.bootstrapUsers` | `true` | Bootstrap initial admin user and `admin`/`editor`/`viewer` GlobalRoles independently of starter data |
+| `persesProvisioning.enabled` | `true` | Provision starter datasources, project, and dashboards (`false` for an empty start managed purely in the UI) |
+| `persesProvisioning.seedDatasources` | `true` | Seed starter `VictoriaMetrics` and `VictoriaLogs` GlobalDatasources when `persesProvisioning.enabled` is `true` |
+| `persesProvisioning.seedProjects` | `true` | Seed starter project (`persesProvisioning.projectName`) when `persesProvisioning.enabled` is `true` |
+| `persesProvisioning.seedDashboards` | `true` | Seed starter dashboards when `persesProvisioning.enabled` and `seedProjects` are `true` |
+| `perses.config.security.authentication.disable_sign_up` | `false` | Allow creating local native users via the UI / `/api/v1/users` |
 | `perses.config.security.cookie.secure` | `false` | Set to `true` when exposed over HTTPS |
 | `observabilityUi.enabled` | `true` | Deploy `perses-ui-enhanced` frontend container |
 | `observabilityUi.image.repository` | `ghcr.io/aimanhaziqmy/perses-ui-enhanced` | Custom UI container image repository |

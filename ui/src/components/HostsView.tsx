@@ -7,8 +7,11 @@ import {
   Chip,
   CircularProgress,
   Collapse,
+  FormControl,
   IconButton,
   LinearProgress,
+  MenuItem,
+  Select,
   Stack,
   Table,
   TableBody,
@@ -24,10 +27,15 @@ import {
 import { useTheme } from '@mui/material/styles';
 import Refresh from 'mdi-material-ui/Refresh';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import type { LiveHostRecord } from '../api/persesClient';
-import { fetchLiveClusterHosts } from '../api/persesClient';
+import {
+  datasourceTargetKey,
+  fetchLiveClusterHosts,
+  useDatasourceTargets,
+} from '../api/persesClient';
 import { PALETTE_TOKENS } from '../theme/persesTheme';
 import { LinuxBadgeIcon } from './BrandIcons';
 
@@ -166,16 +174,41 @@ export function HostsView() {
   const muiTheme = useTheme();
   const mode = muiTheme.palette.mode;
   const tokens = PALETTE_TOKENS[mode];
+  const navigate = useNavigate();
+
+  const {
+    targets: promTargets,
+    isLoading: loadingDatasources,
+  } = useDatasourceTargets('PrometheusDatasource');
+
+  const [selectedTargetKey, setSelectedTargetKey] = useState<string>('');
+
+  useEffect(() => {
+    if (promTargets.length === 0) {
+      setSelectedTargetKey('');
+      return;
+    }
+    if (!selectedTargetKey || !promTargets.some((t) => datasourceTargetKey(t) === selectedTargetKey)) {
+      const def = promTargets.find((t) => t.isDefault) ?? promTargets[0];
+      setSelectedTargetKey(datasourceTargetKey(def));
+    }
+  }, [promTargets, selectedTargetKey]);
+
+  const activeTarget = useMemo(
+    () => promTargets.find((t) => datasourceTargetKey(t) === selectedTargetKey) ?? promTargets[0] ?? null,
+    [promTargets, selectedTargetKey],
+  );
 
   const {
     data: hosts = [],
-    isLoading,
+    isInitialLoading: isLoading,
     isFetching,
     error,
     refetch,
   } = useQuery<LiveHostRecord[], Error>({
-    queryKey: ['vm', 'live-cluster-hosts'],
-    queryFn: () => fetchLiveClusterHosts('VictoriaMetrics'),
+    queryKey: ['vm', 'live-cluster-hosts', selectedTargetKey],
+    queryFn: () => fetchLiveClusterHosts(activeTarget!),
+    enabled: Boolean(activeTarget),
     refetchInterval: 30000,
   });
 
@@ -240,14 +273,35 @@ export function HostsView() {
     return filteredHosts.slice(start, start + rowsPerPage);
   }, [filteredHosts, page, rowsPerPage]);
 
-  if (isLoading) {
+  if (loadingDatasources || (Boolean(activeTarget) && isLoading)) {
     return (
       <Stack alignItems="center" justifyContent="center" spacing={1.5} sx={{ py: 10 }}>
         <CircularProgress size={30} />
         <Typography variant="body2" color="text.secondary">
-          Querying live cluster host metrics from VictoriaMetrics...
+          Querying live cluster host metrics...
         </Typography>
       </Stack>
+    );
+  }
+
+  if (!activeTarget) {
+    return (
+      <Card>
+        <Box sx={{ p: 4, textAlign: 'center' }}>
+          <Stack spacing={1.5} alignItems="center">
+            <Typography variant="subtitle1" fontWeight={700}>
+              No Prometheus / VictoriaMetrics data source configured
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Add a PrometheusDatasource in Integrations → Data sources to inspect cluster nodes, CPU, memory, and GPU
+              telemetry.
+            </Typography>
+            <Button variant="contained" onClick={() => navigate('/datasources')}>
+              Add data source
+            </Button>
+          </Stack>
+        </Box>
+      </Card>
     );
   }
 
@@ -261,7 +315,7 @@ export function HostsView() {
           </Button>
         }
       >
-        Failed to query live cluster hosts from VictoriaMetrics: {error.message}
+        Failed to query live cluster hosts from {activeTarget.name}: {error.message}
       </Alert>
     );
   }
@@ -532,11 +586,22 @@ export function HostsView() {
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center">
+              {promTargets.length > 1 && (
+                <FormControl size="small" sx={{ minWidth: 180 }}>
+                  <Select value={selectedTargetKey} onChange={(e) => setSelectedTargetKey(e.target.value)}>
+                    {promTargets.map((t) => (
+                      <MenuItem key={datasourceTargetKey(t)} value={datasourceTargetKey(t)}>
+                        {t.displayName} ({t.scope === 'global' ? 'Global' : t.project})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
               <Chip
                 size="small"
                 variant="outlined"
                 color="primary"
-                label={`Source: VictoriaMetrics (${filteredHosts.length} nodes)`}
+                label={`Source: ${activeTarget.name} (${filteredHosts.length} nodes)`}
               />
             </Stack>
           </Box>

@@ -1,14 +1,16 @@
-import { Alert, Box, FormControl, InputLabel, MenuItem, Select, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, FormControl, InputLabel, MenuItem, Select, Stack, Typography } from '@mui/material';
 import type { ProjectResource } from '@perses-dev/client';
 import { ErrorAlert, ErrorBoundary, getResourceDisplayName } from '@perses-dev/components';
 import { ViewExplore } from '@perses-dev/explore';
 import { PluginRegistry, ValidationProvider, remotePluginLoader } from '@perses-dev/plugin-system';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-import { fetchProjects, usePersesDatasourceApi } from '../api/persesClient';
+import { fetchProjects, useDatasourceTargets, usePersesDatasourceApi } from '../api/persesClient';
 
 export function ExploreView() {
+  const navigate = useNavigate();
   const pluginLoader = useMemo(() => remotePluginLoader({ baseURL: '', apiPrefix: '' }), []);
   const [projectName, setProjectName] = useState<string>('');
 
@@ -17,6 +19,7 @@ export function ExploreView() {
     queryFn: fetchProjects,
   });
 
+  const { targets: allDatasources, isLoading: loadingDatasources } = useDatasourceTargets();
   const datasourceApi = usePersesDatasourceApi(projectName || undefined);
 
   return (
@@ -39,7 +42,7 @@ export function ExploreView() {
             Unified Metrics &amp; Logs Explorer
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Query VictoriaMetrics (PromQL) and VictoriaLogs (LogsQL) directly via Perses Proxy
+            Query any configured metrics (PromQL) or logs (LogsQL) data source directly via Perses Proxy
           </Typography>
         </Box>
 
@@ -63,18 +66,31 @@ export function ExploreView() {
 
       {projectsError && <Alert severity="error">Failed to load project scopes: {projectsError.message}</Alert>}
 
-      <Box sx={{ flex: 1, minHeight: 540 }}>
-        <ErrorBoundary FallbackComponent={ErrorAlert}>
-          <PluginRegistry pluginLoader={pluginLoader}>
-            <ValidationProvider>
-              <ErrorBoundary FallbackComponent={ErrorAlert}>
-                <ViewExplore datasourceApi={datasourceApi} projectName={projectName || undefined} />
-              </ErrorBoundary>
-            </ValidationProvider>
-          </PluginRegistry>
-        </ErrorBoundary>
-      </Box>
+      {!loadingDatasources && allDatasources.length === 0 ? (
+        <Alert
+          severity="info"
+          action={
+            <Button size="small" color="inherit" onClick={() => navigate('/datasources')}>
+              Add data source
+            </Button>
+          }
+        >
+          No data sources are configured yet. Add a Prometheus or VictoriaLogs data source in Integrations → Data
+          sources to explore metrics and logs.
+        </Alert>
+      ) : (
+        <Box sx={{ flex: 1, minHeight: 540 }}>
+          <ErrorBoundary FallbackComponent={ErrorAlert}>
+            <PluginRegistry pluginLoader={pluginLoader}>
+              <ValidationProvider>
+                <ErrorBoundary FallbackComponent={ErrorAlert}>
+                  <ViewExplore datasourceApi={datasourceApi} projectName={projectName || undefined} />
+                </ErrorBoundary>
+              </ValidationProvider>
+            </PluginRegistry>
+          </ErrorBoundary>
+        </Box>
+      )}
     </Stack>
   );
 }
-

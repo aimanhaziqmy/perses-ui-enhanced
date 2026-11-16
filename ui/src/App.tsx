@@ -26,6 +26,7 @@ import {
   fetchPersesConfig,
   fetchPersesHealth,
   fetchProjects,
+  getCurrentPersesUsername,
   getLocalSiteBranding,
   logoutPerses,
   refreshAuthSession,
@@ -169,6 +170,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
 
   const [sessionState, setSessionState] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
   const [authError, setAuthError] = useState<string | undefined>(undefined);
+  const [currentUsername, setCurrentUsername] = useState<string>(() => getCurrentPersesUsername());
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [branding, setBranding] = useState<SiteBrandingConfig>(() => getLocalSiteBranding());
@@ -203,6 +205,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     setAuthError(undefined);
     try {
       await fetchProjects();
+      setCurrentUsername(getCurrentPersesUsername());
       setSessionState('authenticated');
       void fetchClusterSiteBranding().then((remote) => {
         setBranding(remote);
@@ -213,6 +216,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
         if (refreshed) {
           try {
             await fetchProjects();
+            setCurrentUsername(getCurrentPersesUsername());
             setSessionState('authenticated');
             void fetchClusterSiteBranding().then((remote) => {
               setBranding(remote);
@@ -242,6 +246,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
   const handleLogout = async () => {
     await logoutPerses();
     queryClient.clear();
+    setCurrentUsername('guest');
     setSessionState('unauthenticated');
   };
 
@@ -455,12 +460,12 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 color: '#FFFFFF',
               }}
             >
-              A
+              {(currentUsername.trim()[0] || '?').toUpperCase()}
             </Avatar>
             {!collapsed && (
               <Box sx={{ minWidth: 0 }}>
                 <Typography variant="caption" fontWeight={700} display="block" noWrap>
-                  admin
+                  {currentUsername}
                 </Typography>
                 <Typography variant="caption" fontSize={10.5} color="text.secondary" display="block" noWrap>
                   {branding.orgName}

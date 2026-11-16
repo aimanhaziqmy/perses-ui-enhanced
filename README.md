@@ -40,12 +40,16 @@ An enhanced, Nightingale-inspired open-source React UI shell and turnkey Kuberne
 
 - **Unified Navigation & Dual Theme**: Crisp Light and Dark themes across MUI components and ECharts panels.
 - **Dynamic Site Branding Settings (`System → Site settings`)**: Customize the application name, subtitle/description, organization label, monogram badge, or upload a custom PNG/SVG/JPG/WebP logo directly in the UI (persisted cluster-wide in Perses `GlobalVariable` `site_branding_config` and cached locally for the login screen).
-- **VictoriaLogs Explorer**:
-  - Multi-tab LogsQL query editor with presets and time range selector.
-  - Clickable **All log statistics** histogram bars to zoom directly into any bucket's exact `[start, end]` window.
+- **UI-Driven Data Sources (`Integrations → Data sources`)**: Create, edit, delete, and live-probe both Global Datasources and Project Datasources directly in the UI — supports deploying with zero pre-configured datasources (`persesProvisioning.enabled=false`).
+- **Local Users & RBAC (`Organization → Users` & `Roles`)**: Create/edit/delete local native users, assign Global Roles and Per-Project Roles (`admin`, `editor`, `viewer`, or custom roles), and manage GlobalRoles & Project Roles directly in the UI.
+- **Projects & Interactive Dashboards (`Dashboards`)**: Create/delete Perses projects, create blank dashboards, clone existing dashboards, or import Perses JSON, plus interactive edit & save (`PUT /api/v1/projects/{p}/dashboards/{d}`) via embedded `@perses-dev/dashboards`.
+- **VictoriaLogs Explorer (`Explorer → Logs`)**:
+  - Multi-tab LogsQL query editor with cluster-wide shared custom presets (`GlobalVariable: log_presets_config`), dynamic datasource selector, and time range selector.
+  - Server-side log level filtering (`Error`, `Warning`, `Info`, `Debug`, `Other`) across structured level fields and message text, with color-coded level badges on every log row.
+  - Stacked severity bar histogram (`Error` / `Warning` / `Info` / `Debug` / `Other`) with single-query LogsQL stats (and `/hits` fallback) and click-to-zoom bucket selection.
   - Clean wrapping log stream without horizontal scrollbars, inline expandable structured fields (`▸` / `▾`), and a right-side **Log Detail Drawer** (`Small` / `Medium` / `Large`, `_msg`/`_time`/`_stream_id`/`_stream` cards, **Table** / **JSON** tabs, clipboard copy, `+ filter` chips, and `↑` / `↓` / `Esc` keyboard navigation).
 - **Embedded Perses Dashboards & Metrics Explorer**: Powered by `@perses-dev/dashboards`, `@perses-dev/explore`, `@perses-dev/plugin-system`, `@perses-dev/client`, and `@perses-dev/components`.
-- **Infrastructure Hosts & Live Alert Evaluation**: Real-time node CPU, memory, uptime, Kubernetes node metadata, and NVIDIA DCGM GPU utilization queried from VictoriaMetrics, plus live PromQL/LogsQL rule evaluation and Kubernetes warning events.
+- **Infrastructure Hosts & Configurable Alert Rules**: Real-time node CPU, memory, uptime, Kubernetes node metadata, and NVIDIA DCGM GPU utilization queried from any configured Prometheus/VictoriaMetrics datasource, plus persistent Create/Edit/Delete/Enable-Disable alert rules (`GlobalVariable: alert_rules_config`) evaluated live against PromQL or LogsQL datasources and cluster events.
 
 ---
 

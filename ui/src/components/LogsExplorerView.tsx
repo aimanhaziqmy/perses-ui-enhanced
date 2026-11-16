@@ -7,6 +7,10 @@ import {
   Chip,
   CircularProgress,
   Collapse,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Drawer,
   FormControl,
   FormControlLabel,
@@ -31,11 +35,35 @@ import {
   Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { useQuery } from '@tanstack/react-query';
+import DeleteOutline from 'mdi-material-ui/DeleteOutline';
+import PencilOutline from 'mdi-material-ui/PencilOutline';
+import Plus from 'mdi-material-ui/Plus';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-import type { VictoriaLogEntry, VictoriaLogHitBucket, VictoriaLogsQueryResult } from '../api/persesClient';
-import { queryVictoriaLogs, queryVictoriaLogsHits } from '../api/persesClient';
+import type {
+  LogLevel,
+  LogPresetItem,
+  VictoriaLogEntry,
+  VictoriaLogHitBucket,
+  VictoriaLogsQueryResult,
+} from '../api/persesClient';
+import {
+  ALL_LOG_LEVELS,
+  DEFAULT_LOG_PRESETS,
+  ForbiddenError,
+  buildLogsQLLevelFilter,
+  classifyLogLevel,
+  datasourceTargetKey,
+  fetchLogPresetsConfig,
+  injectLogsQLFilter,
+  queryVictoriaLogs,
+  queryVictoriaLogsLevelHistogram,
+  saveLogPresetsConfig,
+  setLocalLogPresets,
+  useDatasourceTargets,
+} from '../api/persesClient';
 import { PALETTE_TOKENS } from '../theme/persesTheme';
 import { VictoriaLogsBrandIcon } from './BrandIcons';
 
@@ -44,6 +72,7 @@ interface QueryTabState {
   label: string;
   query: string;
   rangeMinutes: number;
+  selectedLevels: LogLevel[];
   customStartIso?: string;
   customEndIso?: string;
 }
@@ -55,12 +84,13 @@ const TIME_RANGES = [
   { label: 'Last 24 hours', minutes: 1440 },
 ];
 
-const QUICK_FILTERS = [
-  { label: 'All logs (*)', query: '*' },
-  { label: 'K8s Events', query: 'stream:="k8s_events"' },
-  { label: 'VictoriaLogs NS', query: 'kubernetes.pod_namespace:="victoria-logs"' },
-  { label: 'Errors / Warnings', query: 'error OR warn OR OOMKilled' },
-];
+const LEVEL_META: Record<LogLevel, { label: string; short: string; color: string }> = {
+  error: { label: 'Error', short: 'ERR', color: '#EF4444' },
+  warning: { label: 'Warning', short: 'WARN', color: '#F59E0B' },
+  info: { label: 'Info', short: 'INFO', color: '#3B82F6' },
+  debug: { label: 'Debug', short: 'DBG', color: '#8B5CF6' },
+  other: { label: 'Other', short: 'OTHER', color: '#64748B' },
+};
 
 function formatCompactTs(ts: string): string {
   const d = new Date(ts);
@@ -89,23 +119,32 @@ function buildFallbackBuckets(entries: VictoriaLogEntry[], startMs: number, endM
   const bucketCount = 48;
   const span = Math.max(1000, endMs - startMs);
   const stepMs = span / bucketCount;
-  const counts = new Array<number>(bucketCount).fill(0);
+  const bucketsCounts: Array<Record<LogLevel, number>> = Array.from({ length: bucketCount }, () => ({
+    error: 0,
+    warning: 0,
+    info: 0,
+    debug: 0,
+    other: 0,
+  }));
 
   for (const entry of entries) {
     const t = new Date(entry._time).getTime();
     if (!Number.isFinite(t)) continue;
     const idx = Math.min(bucketCount - 1, Math.max(0, Math.floor((t - startMs) / stepMs)));
-    counts[idx] += 1;
+    const lvl = classifyLogLevel(entry);
+    bucketsCounts[idx][lvl] += 1;
   }
 
-  return counts.map((count, i) => {
+  return bucketsCounts.map((counts, i) => {
     const d = new Date(startMs + i * stepMs);
     const dEnd = new Date(startMs + (i + 1) * stepMs);
+    const count = counts.error + counts.warning + counts.info + counts.debug + counts.other;
     return {
       timestamp: d.toISOString(),
       endTimestamp: dEnd.toISOString(),
       label: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
       count,
+      counts,
     };
   });
 }
@@ -116,13 +155,61 @@ function formatDrawerWidth(size: 'small' | 'medium' | 'large'): number {
   return 640;
 }
 
+function LevelBadge({ level }: { level: LogLevel }) {
+  const meta = LEVEL_META[level];
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        px: 0.75,
+        py: 0.15,
+        borderRadius: 0.75,
+        fontSize: 10.5,
+        fontWeight: 700,
+        fontFamily: 'monospace',
+        letterSpacing: '0.03em',
+        color: '#FFFFFF',
+        bgcolor: meta.color,
+        minWidth: 46,
+        lineHeight: 1.4,
+      }}
+    >
+      {meta.short}
+    </Box>
+  );
+}
+
 export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string }) {
   const muiTheme = useTheme();
   const mode = muiTheme.palette.mode;
   const tokens = PALETTE_TOKENS[mode];
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const { targets: vlTargets, isLoading: loadingDatasources } = useDatasourceTargets('VictoriaLogsDatasource');
+  const [selectedTargetKey, setSelectedTargetKey] = useState<string>('');
+
+  useEffect(() => {
+    if (vlTargets.length === 0) {
+      setSelectedTargetKey('');
+      return;
+    }
+    if (!selectedTargetKey || !vlTargets.some((t) => datasourceTargetKey(t) === selectedTargetKey)) {
+      const def = vlTargets.find((t) => t.isDefault) ?? vlTargets[0];
+      setSelectedTargetKey(datasourceTargetKey(def));
+    }
+  }, [vlTargets, selectedTargetKey]);
+
+  const activeTarget = useMemo(
+    () => vlTargets.find((t) => datasourceTargetKey(t) === selectedTargetKey) ?? vlTargets[0] ?? null,
+    [vlTargets, selectedTargetKey],
+  );
 
   const [tabs, setTabs] = useState<QueryTabState[]>([
-    { id: 'q1', label: 'Query 1', query: initialQuery, rangeMinutes: 60 },
+    { id: 'q1', label: 'Query 1', query: initialQuery, rangeMinutes: 60, selectedLevels: [] },
   ]);
   const [activeTabId, setActiveTabId] = useState<string>('q1');
   const [executedNonce, setExecutedNonce] = useState<number>(1);
@@ -139,6 +226,23 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
   const [drawerTab, setDrawerTab] = useState<'table' | 'json'>('table');
   const [copiedJson, setCopiedJson] = useState<boolean>(false);
 
+  // Presets dialog state
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [presetMode, setPresetMode] = useState<'create' | 'edit'>('create');
+  const [editingPresetId, setEditingPresetId] = useState<string>('');
+  const [presetLabel, setPresetLabel] = useState('');
+  const [presetQuery, setPresetQuery] = useState('');
+  const [presetDesc, setPresetDesc] = useState('');
+  const [presetSaving, setPresetSaving] = useState(false);
+  const [presetError, setPresetError] = useState<string | null>(null);
+  const [managePresetsOpen, setManagePresetsOpen] = useState(false);
+  const [feedback, setFeedback] = useState<{ kind: 'success' | 'warning' | 'error'; text: string } | null>(null);
+
+  const { data: presets = DEFAULT_LOG_PRESETS } = useQuery<LogPresetItem[], Error>({
+    queryKey: ['perses', 'log-presets-config'],
+    queryFn: fetchLogPresetsConfig,
+  });
+
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
 
   const updateActiveTab = (patch: Partial<QueryTabState>) => {
@@ -148,11 +252,16 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
   const addTab = () => {
     const num = tabs.length + 1;
     const id = `q${Date.now()}`;
-    setTabs((prev) => [...prev, { id, label: `Query ${num}`, query: '*', rangeMinutes: 60 }]);
+    setTabs((prev) => [...prev, { id, label: `Query ${num}`, query: '*', rangeMinutes: 60, selectedLevels: [] }]);
     setActiveTabId(id);
     setSelectedLogIndex(null);
     setExpandedRows({});
   };
+
+  const effectiveQuery = useMemo(() => {
+    const levelExpr = buildLogsQLLevelFilter(activeTab.selectedLevels);
+    return injectLogsQLFilter(activeTab.query, levelExpr);
+  }, [activeTab.query, activeTab.selectedLevels]);
 
   const { startDate, endDate } = useMemo(() => {
     if (activeTab.customStartIso && activeTab.customEndIso) {
@@ -170,49 +279,71 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
 
   const {
     data: logsResult,
-    isLoading: loadingLogs,
+    isInitialLoading: loadingLogs,
     isFetching: fetchingLogs,
     error: logsError,
   } = useQuery<VictoriaLogsQueryResult, Error>({
     queryKey: [
       'vlogs',
       'query',
+      selectedTargetKey,
       activeTab.id,
-      activeTab.query,
+      effectiveQuery,
       activeTab.rangeMinutes,
       activeTab.customStartIso ?? '',
       activeTab.customEndIso ?? '',
       executedNonce,
     ],
     queryFn: () =>
-      queryVictoriaLogs(activeTab.query, 300, startDate.toISOString(), endDate.toISOString(), 'VictoriaLogs'),
+      queryVictoriaLogs(effectiveQuery, 300, startDate.toISOString(), endDate.toISOString(), activeTarget!),
+    enabled: Boolean(activeTarget),
   });
 
   const spanSeconds = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / 1000));
   const stepSeconds = Math.max(1, Math.round(spanSeconds / 50));
 
-  const { data: hitsBuckets } = useQuery<VictoriaLogHitBucket[], Error>({
+  const { data: histogramData } = useQuery<{ buckets: VictoriaLogHitBucket[]; stacked: boolean }, Error>({
     queryKey: [
       'vlogs',
-      'hits',
+      'level-histogram',
+      selectedTargetKey,
       activeTab.id,
-      activeTab.query,
+      effectiveQuery,
       activeTab.rangeMinutes,
       activeTab.customStartIso ?? '',
       activeTab.customEndIso ?? '',
       executedNonce,
     ],
     queryFn: () =>
-      queryVictoriaLogsHits(activeTab.query, startDate.toISOString(), endDate.toISOString(), stepSeconds, 'VictoriaLogs'),
+      queryVictoriaLogsLevelHistogram(
+        effectiveQuery,
+        startDate.toISOString(),
+        endDate.toISOString(),
+        stepSeconds,
+        activeTarget!,
+      ),
+    enabled: Boolean(activeTarget),
     retry: false,
   });
 
   const effectiveBuckets = useMemo(() => {
-    if (hitsBuckets && hitsBuckets.length > 0) {
-      return hitsBuckets;
+    if (histogramData && histogramData.buckets.length > 0) {
+      return histogramData.buckets;
     }
     return buildFallbackBuckets(logsResult?.entries ?? [], startDate.getTime(), endDate.getTime());
-  }, [hitsBuckets, logsResult?.entries, startDate, endDate]);
+  }, [histogramData, logsResult?.entries, startDate, endDate]);
+
+  const levelTotals = useMemo(() => {
+    const totals: Record<LogLevel, number> = { error: 0, warning: 0, info: 0, debug: 0, other: 0 };
+    for (const b of effectiveBuckets) {
+      totals.error += b.counts.error;
+      totals.warning += b.counts.warning;
+      totals.info += b.counts.info;
+      totals.debug += b.counts.debug;
+      totals.other += b.counts.other;
+    }
+    return totals;
+  }, [effectiveBuckets]);
 
   const maxBucketCount = Math.max(1, ...effectiveBuckets.map((b) => b.count));
 
@@ -248,6 +379,24 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
     setExecutedNonce((n) => n + 1);
   };
 
+  const toggleLevelFilter = (lvl: LogLevel) => {
+    const current = activeTab.selectedLevels;
+    const next = current.includes(lvl) ? current.filter((l) => l !== lvl) : [...current, lvl];
+    updateActiveTab({ selectedLevels: next });
+    setPage(0);
+    setExpandedRows({});
+    setSelectedLogIndex(null);
+    setExecutedNonce((n) => n + 1);
+  };
+
+  const clearLevelFilters = () => {
+    updateActiveTab({ selectedLevels: [] });
+    setPage(0);
+    setExpandedRows({});
+    setSelectedLogIndex(null);
+    setExecutedNonce((n) => n + 1);
+  };
+
   const handleZoomToBucket = (bucket: VictoriaLogHitBucket) => {
     updateActiveTab({
       customStartIso: bucket.timestamp,
@@ -275,8 +424,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
   const appendFieldFilter = (field: string, value: string) => {
     const escaped = String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     const expr = `${field}:="${escaped}"`;
-    const cur = activeTab.query.trim();
-    const nextQuery = !cur || cur === '*' ? expr : `${cur} AND ${expr}`;
+    const nextQuery = injectLogsQLFilter(activeTab.query, expr);
     updateActiveTab({ query: nextQuery });
     setPage(0);
     setSelectedLogIndex(null);
@@ -294,11 +442,150 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
     }
   };
 
+  const openCreatePreset = () => {
+    setPresetError(null);
+    setPresetMode('create');
+    setEditingPresetId('');
+    setPresetLabel('');
+    setPresetQuery(activeTab.query || '*');
+    setPresetDesc('');
+    setPresetDialogOpen(true);
+  };
+
+  const openEditPreset = (preset: LogPresetItem) => {
+    setPresetError(null);
+    setPresetMode('edit');
+    setEditingPresetId(preset.id);
+    setPresetLabel(preset.label);
+    setPresetQuery(preset.query);
+    setPresetDesc(preset.description ?? '');
+    setPresetDialogOpen(true);
+  };
+
+  const handleSavePreset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!presetLabel.trim() || !presetQuery.trim()) {
+      setPresetError('Preset name and LogsQL query are required.');
+      return;
+    }
+    setPresetSaving(true);
+    setPresetError(null);
+    const id =
+      presetMode === 'edit'
+        ? editingPresetId
+        : presetLabel
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '') || `preset-${Date.now()}`;
+    const uniqueId =
+      presetMode === 'create' && presets.some((p) => p.id === id) ? `${id}-${Date.now().toString(36)}` : id;
+
+    const item: LogPresetItem = {
+      id: uniqueId,
+      label: presetLabel.trim(),
+      query: presetQuery.trim(),
+      description: presetDesc.trim() || undefined,
+    };
+
+    const next =
+      presetMode === 'create'
+        ? [...presets, item]
+        : presets.map((p) => (p.id === editingPresetId ? item : p));
+
+    try {
+      const saved = await saveLogPresetsConfig(next);
+      queryClient.setQueryData(['perses', 'log-presets-config'], saved);
+      setPresetDialogOpen(false);
+      setFeedback({ kind: 'success', text: `Saved shared preset "${item.label}".` });
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        setLocalLogPresets(next);
+        queryClient.setQueryData(['perses', 'log-presets-config'], next);
+        setPresetDialogOpen(false);
+        setFeedback({
+          kind: 'warning',
+          text: `Saved preset "${item.label}" locally in browser (cluster-wide sync requires admin/editor GlobalVariable permission).`,
+        });
+      } else {
+        setPresetError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      setPresetSaving(false);
+    }
+  };
+
+  const handleDeletePreset = async (preset: LogPresetItem) => {
+    if (presets.length <= 1) return;
+    const next = presets.filter((p) => p.id !== preset.id);
+    try {
+      const saved = await saveLogPresetsConfig(next);
+      queryClient.setQueryData(['perses', 'log-presets-config'], saved);
+      setFeedback({ kind: 'success', text: `Removed preset "${preset.label}".` });
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        setLocalLogPresets(next);
+        queryClient.setQueryData(['perses', 'log-presets-config'], next);
+        setFeedback({
+          kind: 'warning',
+          text: `Removed preset "${preset.label}" locally (cluster-wide sync requires GlobalVariable write permission).`,
+        });
+      } else {
+        setFeedback({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  };
+
+  if (loadingDatasources) {
+    return (
+      <Stack alignItems="center" justifyContent="center" sx={{ py: 8 }}>
+        <CircularProgress />
+      </Stack>
+    );
+  }
+
+  if (!activeTarget) {
+    return (
+      <Card>
+        <CardContent sx={{ py: 6, textAlign: 'center' }}>
+          <Stack spacing={1.5} alignItems="center">
+            <VictoriaLogsBrandIcon size={36} />
+            <Typography variant="subtitle1" fontWeight={700}>
+              No VictoriaLogs data source configured
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Add a VictoriaLogsDatasource in Integrations → Data sources to query logs, filter levels, and save shared
+              presets.
+            </Typography>
+            <Button variant="contained" onClick={() => navigate('/datasources')}>
+              Add data source
+            </Button>
+          </Stack>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Stack spacing={1.5}>
-      {/* Query Tabs Bar (matching Screenshot 4 top bar) */}
+      {feedback && (
+        <Alert severity={feedback.kind} onClose={() => setFeedback(null)}>
+          {feedback.text}
+        </Alert>
+      )}
+
+      {/* Query Tabs & Datasource Bar */}
       <Card>
-        <Box sx={{ px: 2, borderBottom: `1px solid ${tokens.borderSubtle}`, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box
+          sx={{
+            px: 2,
+            borderBottom: `1px solid ${tokens.borderSubtle}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            flexWrap: 'wrap',
+          }}
+        >
           <Tabs
             value={activeTab.id}
             onChange={(_, val: string) => {
@@ -315,21 +602,36 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
             +
           </Button>
           <Box sx={{ flexGrow: 1 }} />
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ py: 0.5 }}>
             <VictoriaLogsBrandIcon size={16} />
-            <Chip size="small" variant="outlined" label="VictoriaLogs" sx={{ height: 24, fontSize: 12 }} />
+            <FormControl size="small" sx={{ minWidth: 185 }}>
+              <Select
+                value={selectedTargetKey}
+                onChange={(e) => {
+                  setSelectedTargetKey(e.target.value);
+                  setPage(0);
+                  setExecutedNonce((n) => n + 1);
+                }}
+              >
+                {vlTargets.map((t) => (
+                  <MenuItem key={datasourceTargetKey(t)} value={datasourceTargetKey(t)}>
+                    {t.displayName} ({t.scope === 'global' ? 'Global' : t.project})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Stack>
         </Box>
 
         <CardContent sx={{ p: 1.75, '&:last-child': { pb: 1.75 } }}>
-          {/* Quick filter chips */}
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 1.25 }}>
+          {/* Shared Presets Bar */}
+          <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 1.25 }}>
             <Typography variant="caption" color="text.secondary" fontWeight={600}>
               Presets:
             </Typography>
-            {QUICK_FILTERS.map((preset) => (
+            {presets.map((preset) => (
               <Chip
-                key={preset.label}
+                key={preset.id}
                 size="small"
                 label={preset.label}
                 variant={activeTab.query === preset.query ? 'filled' : 'outlined'}
@@ -342,6 +644,23 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 sx={{ height: 22, fontSize: 11.5 }}
               />
             ))}
+            <Chip
+              size="small"
+              icon={<Plus sx={{ fontSize: 14 }} />}
+              label="Save preset"
+              variant="outlined"
+              color="primary"
+              onClick={openCreatePreset}
+              sx={{ height: 22, fontSize: 11.5, cursor: 'pointer' }}
+            />
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => setManagePresetsOpen(true)}
+              sx={{ fontSize: 11.5, minWidth: 0, px: 0.75, py: 0 }}
+            >
+              Manage presets
+            </Button>
           </Stack>
 
           {/* Search Query Input Bar */}
@@ -432,15 +751,62 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
             </Button>
           </Stack>
 
-          {/* All Log Statistics Histogram (Nightingale Purple Bar Chart — click any bar to zoom) */}
+          {/* Server-Side Level Filter Chips */}
+          <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 1.25 }}>
+            <Typography variant="caption" color="text.secondary" fontWeight={600}>
+              Level filter:
+            </Typography>
+            <Chip
+              size="small"
+              label="All"
+              variant={activeTab.selectedLevels.length === 0 ? 'filled' : 'outlined'}
+              color={activeTab.selectedLevels.length === 0 ? 'primary' : 'default'}
+              onClick={clearLevelFilters}
+              sx={{ height: 22, fontSize: 11.5 }}
+            />
+            {ALL_LOG_LEVELS.map((lvl) => {
+              const meta = LEVEL_META[lvl];
+              const active = activeTab.selectedLevels.includes(lvl);
+              return (
+                <Chip
+                  key={lvl}
+                  size="small"
+                  label={`${meta.label} (${levelTotals[lvl]})`}
+                  variant={active ? 'filled' : 'outlined'}
+                  onClick={() => toggleLevelFilter(lvl)}
+                  icon={
+                    <Box
+                      sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        bgcolor: active ? '#FFFFFF' : meta.color,
+                        ml: 0.75,
+                      }}
+                    />
+                  }
+                  sx={{
+                    height: 22,
+                    fontSize: 11.5,
+                    bgcolor: active ? meta.color : undefined,
+                    color: active ? '#FFFFFF' : undefined,
+                    borderColor: active ? meta.color : undefined,
+                    '&:hover': active ? { bgcolor: meta.color } : undefined,
+                  }}
+                />
+              );
+            })}
+          </Stack>
+
+          {/* Stacked Level Log Statistics Histogram */}
           <Box sx={{ mt: 2 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-              <Stack direction="row" spacing={1} alignItems="center">
+            <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1} sx={{ mb: 1 }}>
+              <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
                 <Typography variant="caption" fontWeight={600} color="text.secondary">
                   All log statistics
                 </Typography>
                 <Typography variant="caption" fontSize={11} color="text.secondary">
-                  (click any bar to zoom to that time range)
+                  (click any bar to zoom · stacked by severity)
                 </Typography>
               </Stack>
               <Stack direction="row" spacing={1.5} alignItems="center">
@@ -467,14 +833,32 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                   border: `1px solid ${tokens.borderSubtle}`,
                 }}
               >
-                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: 68 }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: 76 }}>
                   {effectiveBuckets.map((bucket, idx) => {
-                    const heightPx = bucket.count > 0 ? Math.max(4, Math.round((bucket.count / maxBucketCount) * 60)) : 2;
+                    const total = bucket.count;
+                    const totalHeightPx = total > 0 ? Math.max(4, Math.round((total / maxBucketCount) * 68)) : 2;
+                    const tooltipText = (
+                      <Box sx={{ fontSize: 11.5 }}>
+                        <div>
+                          <strong>
+                            {formatCompactTs(bucket.timestamp)} ~ {formatCompactTs(bucket.endTimestamp)}
+                          </strong>
+                        </div>
+                        <div>Total: {total} logs (click to zoom)</div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+                          {ALL_LOG_LEVELS.map((lvl) => (
+                            <span key={lvl} style={{ color: LEVEL_META[lvl].color, fontWeight: 600 }}>
+                              {LEVEL_META[lvl].short}: {bucket.counts[lvl]}
+                            </span>
+                          ))}
+                        </div>
+                      </Box>
+                    );
+
+                    const orderedLevels: LogLevel[] = ['error', 'warning', 'info', 'debug', 'other'];
+
                     return (
-                      <Tooltip
-                        key={`${bucket.timestamp}-${idx}`}
-                        title={`${formatCompactTs(bucket.timestamp)} ~ ${formatCompactTs(bucket.endTimestamp)} · ${bucket.count} logs (click to zoom)`}
-                      >
+                      <Tooltip key={`${bucket.timestamp}-${idx}`} title={tooltipText}>
                         <Box
                           onClick={() => handleZoomToBucket(bucket)}
                           sx={{
@@ -483,35 +867,75 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                             display: 'flex',
                             alignItems: 'flex-end',
                             cursor: 'pointer',
-                            '&:hover .bar-fill': {
-                              opacity: 1,
-                              bgcolor: 'primary.dark',
+                            '&:hover .stacked-bar': {
+                              filter: 'brightness(1.12)',
+                              outline: `1px solid ${tokens.borderSubtle}`,
                             },
                           }}
                         >
-                          <Box
-                            className="bar-fill"
-                            sx={{
-                              width: '100%',
-                              height: heightPx,
-                              bgcolor: bucket.count > 0 ? tokens.chartBarPurple : 'divider',
-                              borderRadius: '2px 2px 0 0',
-                              opacity: bucket.count > 0 ? 0.92 : 0.35,
-                              transition: 'opacity 0.12s ease',
-                            }}
-                          />
+                          {total === 0 ? (
+                            <Box
+                              className="stacked-bar"
+                              sx={{
+                                width: '100%',
+                                height: 2,
+                                bgcolor: 'divider',
+                                opacity: 0.35,
+                                borderRadius: '2px 2px 0 0',
+                              }}
+                            />
+                          ) : (
+                            <Box
+                              className="stacked-bar"
+                              sx={{
+                                width: '100%',
+                                height: totalHeightPx,
+                                display: 'flex',
+                                flexDirection: 'column-reverse',
+                                borderRadius: '2px 2px 0 0',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              {orderedLevels.map((lvl) => {
+                                const c = bucket.counts[lvl];
+                                if (c <= 0) return null;
+                                const pct = (c / total) * 100;
+                                return (
+                                  <Box
+                                    key={lvl}
+                                    sx={{
+                                      width: '100%',
+                                      height: `${pct}%`,
+                                      minHeight: 1.5,
+                                      bgcolor: LEVEL_META[lvl].color,
+                                    }}
+                                  />
+                                );
+                              })}
+                            </Box>
+                          )}
                         </Box>
                       </Tooltip>
                     );
                   })}
                 </Box>
-                <Stack direction="row" justifyContent="space-between" sx={{ mt: 0.5 }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.75 }} flexWrap="wrap" gap={1}>
                   <Typography variant="caption" fontSize={10.5} color="text.secondary">
                     {effectiveBuckets[0]?.label ?? ''}
                   </Typography>
-                  <Typography variant="caption" fontSize={10.5} color="text.secondary">
-                    Peak bucket: {maxBucketCount} events
-                  </Typography>
+                  <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+                    {ALL_LOG_LEVELS.map((lvl) => (
+                      <Stack key={lvl} direction="row" spacing={0.5} alignItems="center">
+                        <Box sx={{ width: 8, height: 8, borderRadius: 0.5, bgcolor: LEVEL_META[lvl].color }} />
+                        <Typography variant="caption" fontSize={10.5} color="text.secondary">
+                          {LEVEL_META[lvl].label}: {levelTotals[lvl]}
+                        </Typography>
+                      </Stack>
+                    ))}
+                    <Typography variant="caption" fontSize={10.5} color="text.secondary">
+                      · Peak bucket: {maxBucketCount}
+                    </Typography>
+                  </Stack>
                   <Typography variant="caption" fontSize={10.5} color="text.secondary">
                     {effectiveBuckets[effectiveBuckets.length - 1]?.label ?? ''}
                   </Typography>
@@ -583,13 +1007,13 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
           <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8 }}>
             <CircularProgress size={26} />
             <Typography variant="caption" color="text.secondary">
-              Streaming LogsQL records from VictoriaLogs...
+              Streaming LogsQL records from {activeTarget.name}...
             </Typography>
           </Stack>
         ) : entries.length === 0 ? (
           <Box sx={{ p: 4, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">
-              No logs matched query <code>{activeTab.query}</code> in the selected time range.
+              No logs matched query <code>{effectiveQuery}</code> in the selected time range.
             </Typography>
           </Box>
         ) : displayMode === 'original' ? (
@@ -599,6 +1023,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 <TableRow>
                   <TableCell width={46} />
                   {showLineNum && <TableCell width={56}>Lines</TableCell>}
+                  <TableCell width={70}>Level</TableCell>
                   {showLogTime && <TableCell width={160}>Log time</TableCell>}
                   <TableCell>Log data</TableCell>
                 </TableRow>
@@ -609,6 +1034,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                   const rowNumber = globalIndex + 1;
                   const isExpanded = Boolean(expandedRows[globalIndex]);
                   const isSelected = selectedLogIndex === globalIndex;
+                  const lvl = classifyLogLevel(entry);
                   const extraFields = Object.entries(entry)
                     .filter(([k, v]) => k !== '_time' && k !== '_stream_id' && v !== '')
                     .sort(([a], [b]) => a.localeCompare(b));
@@ -640,6 +1066,9 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                             {rowNumber}
                           </TableCell>
                         )}
+                        <TableCell sx={{ verticalAlign: 'top', pt: 0.9 }}>
+                          <LevelBadge level={lvl} />
+                        </TableCell>
                         {showLogTime && (
                           <TableCell
                             sx={{
@@ -715,7 +1144,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                       {isExpanded && (
                         <TableRow>
                           <TableCell
-                            colSpan={1 + (showLineNum ? 1 : 0) + (showLogTime ? 1 : 0) + 1}
+                            colSpan={1 + (showLineNum ? 1 : 0) + 1 + (showLogTime ? 1 : 0) + 1}
                             sx={{ p: 0, bgcolor: tokens.bgSubtle }}
                           >
                             <Box sx={{ px: 3, py: 1.25, borderBottom: `1px solid ${tokens.borderSubtle}` }}>
@@ -784,6 +1213,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
+                  <TableCell width={70}>Level</TableCell>
                   <TableCell width={160}>Timestamp</TableCell>
                   <TableCell width={200}>Namespace / Pod</TableCell>
                   <TableCell>Message (_msg)</TableCell>
@@ -793,6 +1223,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
               <TableBody>
                 {pagedEntries.map((entry, idx) => {
                   const globalIndex = page * rowsPerPage + idx;
+                  const lvl = classifyLogLevel(entry);
                   return (
                     <TableRow
                       key={`${entry._time}-${idx}`}
@@ -801,6 +1232,9 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                       onClick={() => setSelectedLogIndex(globalIndex)}
                       sx={{ cursor: 'pointer' }}
                     >
+                      <TableCell>
+                        <LevelBadge level={lvl} />
+                      </TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                         {formatCompactTs(entry._time)}
                       </TableCell>
@@ -836,7 +1270,116 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
         />
       </Card>
 
-      {/* Nightingale-Style Right Slide-Out Log Detail Drawer */}
+      {/* Create / Edit Log Preset Dialog */}
+      <Dialog open={presetDialogOpen} onClose={() => setPresetDialogOpen(false)} maxWidth="sm" fullWidth>
+        <Box component="form" onSubmit={handleSavePreset}>
+          <DialogTitle>{presetMode === 'create' ? 'Save Shared Log Preset' : 'Edit Log Preset'}</DialogTitle>
+          <DialogContent dividers>
+            <Stack spacing={2}>
+              {presetError && <Alert severity="error">{presetError}</Alert>}
+              <TextField
+                label="Preset Name"
+                placeholder="e.g. Ingress 5xx Errors"
+                value={presetLabel}
+                onChange={(e) => setPresetLabel(e.target.value)}
+                required
+                fullWidth
+                size="small"
+              />
+              <TextField
+                label="LogsQL Query"
+                value={presetQuery}
+                onChange={(e) => setPresetQuery(e.target.value)}
+                required
+                fullWidth
+                multiline
+                minRows={2}
+                size="small"
+                InputProps={{ sx: { fontFamily: 'monospace', fontSize: 12.5 } }}
+              />
+              <TextField
+                label="Description (optional)"
+                value={presetDesc}
+                onChange={(e) => setPresetDesc(e.target.value)}
+                fullWidth
+                size="small"
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setPresetDialogOpen(false)} disabled={presetSaving}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="contained" disabled={presetSaving}>
+              {presetSaving ? 'Saving...' : 'Save Preset'}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+
+      {/* Manage Presets Dialog */}
+      <Dialog open={managePresetsOpen} onClose={() => setManagePresetsOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Manage Shared Log Presets</DialogTitle>
+        <DialogContent dividers>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Label</TableCell>
+                <TableCell>LogsQL Query</TableCell>
+                <TableCell align="right" width={96}>
+                  Actions
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {presets.map((preset) => (
+                <TableRow key={preset.id} hover>
+                  <TableCell sx={{ fontWeight: 600 }}>{preset.label}</TableCell>
+                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 11.5 }}>{preset.query}</TableCell>
+                  <TableCell align="right">
+                    <IconButton
+                      size="small"
+                      onClick={() => {
+                        setManagePresetsOpen(false);
+                        openEditPreset(preset);
+                      }}
+                    >
+                      <PencilOutline fontSize="small" />
+                    </IconButton>
+                    <Tooltip title={presets.length <= 1 ? 'At least one preset is required' : 'Delete preset'}>
+                      <span>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          disabled={presets.length <= 1}
+                          onClick={() => void handleDeletePreset(preset)}
+                        >
+                          <DeleteOutline fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            variant="outlined"
+            startIcon={<Plus />}
+            onClick={() => {
+              setManagePresetsOpen(false);
+              openCreatePreset();
+            }}
+          >
+            Add Preset
+          </Button>
+          <Button onClick={() => setManagePresetsOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Right Slide-Out Log Detail Drawer */}
       <Drawer
         anchor="right"
         open={Boolean(selectedEntry)}
@@ -865,9 +1408,12 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 gap: 1.5,
               }}
             >
-              <Typography variant="subtitle1" fontWeight={700} sx={{ fontFamily: 'monospace' }}>
-                {formatCompactTs(selectedEntry._time)}
-              </Typography>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <LevelBadge level={classifyLogLevel(selectedEntry)} />
+                <Typography variant="subtitle1" fontWeight={700} sx={{ fontFamily: 'monospace' }}>
+                  {formatCompactTs(selectedEntry._time)}
+                </Typography>
+              </Stack>
 
               <Stack direction="row" spacing={1} alignItems="center">
                 <ToggleButtonGroup
@@ -896,7 +1442,6 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
 
             {/* Drawer Body */}
             <Box sx={{ flex: 1, overflowY: 'auto', p: 2.5 }}>
-              {/* Core VictoriaLogs Summary Cards: _msg, _time, _stream_id, _stream */}
               <Stack spacing={1.25} sx={{ mb: 2 }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
                   <Box
@@ -988,7 +1533,6 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 )}
               </Stack>
 
-              {/* Table | JSON Tabs + Copy to clipboard */}
               <Box
                 sx={{
                   borderBottom: `1px solid ${tokens.borderSubtle}`,
@@ -1077,7 +1621,6 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
               )}
             </Box>
 
-            {/* Drawer Keyboard Hint Footer */}
             <Box
               sx={{
                 px: 2.5,
@@ -1102,4 +1645,3 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
     </Stack>
   );
 }
-

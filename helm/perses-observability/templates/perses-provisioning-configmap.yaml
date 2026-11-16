@@ -1,4 +1,4 @@
-{{- if and .Values.subcharts.persesEnabled .Values.persesProvisioning.enabled }}
+{{- if .Values.subcharts.persesEnabled }}
 {{- $vmUrl := printf "http://victoria-metrics.%s.svc.cluster.local:8428" .Release.Namespace }}
 {{- if .Values.subcharts.victoriaMetricsEnabled }}
 {{- $vmUrl = printf "http://%s.%s.svc.cluster.local:8428" (default "victoria-metrics" .Values.victoriaMetrics.server.fullnameOverride) .Release.Namespace }}
@@ -7,6 +7,10 @@
 {{- if .Values.victoriaLogs.enabled }}
 {{- $vlUrl = printf "http://vl-victoria-logs-single-server.%s.svc.cluster.local:9428" .Release.Namespace }}
 {{- end }}
+{{- $hasUsers := .Values.persesProvisioning.bootstrapUsers }}
+{{- $hasDatasources := and .Values.persesProvisioning.enabled .Values.persesProvisioning.seedDatasources }}
+{{- $hasProjects := and .Values.persesProvisioning.enabled .Values.persesProvisioning.seedProjects }}
+{{- $hasDashboards := and .Values.persesProvisioning.enabled .Values.persesProvisioning.seedProjects .Values.persesProvisioning.seedDashboards }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -14,7 +18,11 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "perses-observability.labels" . | nindent 4 }}
+{{- if not (or $hasUsers $hasDatasources $hasProjects $hasDashboards) }}
+data: {}
+{{- else }}
 data:
+  {{- if $hasUsers }}
   01-users.json: |
     [
       {
@@ -43,6 +51,38 @@ data:
         }
       },
       {
+        "kind": "GlobalRole",
+        "metadata": {
+          "name": "editor"
+        },
+        "spec": {
+          "permissions": [
+            {
+              "actions": ["*"],
+              "scopes": ["Dashboard", "Datasource", "EphemeralDashboard", "Folder", "Project", "Variable"]
+            },
+            {
+              "actions": ["read"],
+              "scopes": ["GlobalDatasource", "GlobalVariable", "Role", "RoleBinding"]
+            }
+          ]
+        }
+      },
+      {
+        "kind": "GlobalRole",
+        "metadata": {
+          "name": "viewer"
+        },
+        "spec": {
+          "permissions": [
+            {
+              "actions": ["read"],
+              "scopes": ["Dashboard", "Datasource", "EphemeralDashboard", "Folder", "Project", "Variable", "GlobalDatasource", "GlobalVariable"]
+            }
+          ]
+        }
+      },
+      {
         "kind": "GlobalRoleBinding",
         "metadata": {
           "name": "admin"
@@ -58,6 +98,8 @@ data:
         }
       }
     ]
+  {{- end }}
+  {{- if $hasDatasources }}
   02-globaldatasources.json: |
     [
       {
@@ -107,6 +149,8 @@ data:
         }
       }
     ]
+  {{- end }}
+  {{- if $hasProjects }}
   03-project.json: |
     [
       {
@@ -121,6 +165,8 @@ data:
         }
       }
     ]
+  {{- end }}
+  {{- if $hasDashboards }}
   04-dashboards.json: |
     [
       {
@@ -711,5 +757,7 @@ data:
         }
       }
     ]
+  {{- end }}
+{{- end }}
 {{- end }}
 

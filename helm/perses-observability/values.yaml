@@ -231,7 +231,17 @@ persesAuth:
   nativeAdminPassword: "changeme"
 
 persesProvisioning:
+  # Decoupled user & role bootstrap (01-users.json: native admin user + admin/editor/viewer GlobalRoles).
+  # Kept independent so an empty-start deployment still has an admin account to sign in.
+  bootstrapUsers: true
+  # Provision starter datasources, project, and dashboards via the perses-provisioning ConfigMap.
+  # Set enabled: false for an empty start (or toggle individual seed* flags below) and add resources in the UI.
+  # Note: ConfigMap provisioning continuously syncs starter filenames every perses.config.provisioning.interval;
+  # for a seed-once workflow, install with enabled: true and then upgrade with --set persesProvisioning.enabled=false.
   enabled: true
+  seedDatasources: true
+  seedProjects: true
+  seedDashboards: true
   projectName: "observability"
   projectDisplayName: "Kubernetes Platform Observability"
 
@@ -291,7 +301,7 @@ perses:
       authentication:
         access_token_ttl: 1h
         refresh_token_ttl: 24h
-        disable_sign_up: true
+        disable_sign_up: false
         providers:
           enable_native: true
           # Optional OAuth/OIDC provider example:
@@ -308,8 +318,8 @@ perses:
           #     custom_login_property: "preferred_username"
       authorization:
         guest_permissions:
-          - actions: ["*"]
-            scopes: ["*"]
+          - actions: ["read"]
+            scopes: ["GlobalVariable"]
     frontend:
       explorer:
         enable: true
