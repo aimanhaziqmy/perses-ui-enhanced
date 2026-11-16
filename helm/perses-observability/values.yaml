@@ -362,3 +362,12 @@ observabilityUi:
       name: main-gateway
       namespace: gateway-system
       sectionName: https
+  # Optional dedicated-port HTTPS ListenerSet (useful for IP-based access without DNS/nip.io)
+  listenerSet:
+    enabled: false
+    name: perses-ui
+    sectionName: https-ui
+    port: 50811
+    gatewayName: external
+    gatewayNamespace: gateway-system
+    tlsSecretName: perses-ui-tls

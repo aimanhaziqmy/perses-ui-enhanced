@@ -42,6 +42,7 @@ import ShieldAccount from 'mdi-material-ui/ShieldAccount';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useState } from 'react';
 
+import { SsoSettingsCard } from './SsoSettingsCard';
 import type {
   PersesFrontendConfig,
   PersesGlobalRoleBindingResource,
@@ -1473,6 +1474,8 @@ export function SiteSettingsView({
           </Box>
         </CardContent>
       </Card>
+
+      <SsoSettingsCard />
     </Stack>
   );
 }

@@ -6,13 +6,22 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "perses-observability.labels" . | nindent 4 }}
+{{- $ls := .Values.observabilityUi.listenerSet | default dict }}
 spec:
   parentRefs:
+    {{- if $ls.enabled }}
+    - group: gateway.networking.k8s.io
+      kind: ListenerSet
+      name: {{ default "perses-ui" $ls.name }}
+      namespace: {{ .Release.Namespace }}
+      sectionName: {{ default "https-ui" $ls.sectionName }}
+    {{- else }}
     - group: gateway.networking.k8s.io
       kind: {{ default "Gateway" .Values.observabilityUi.httpRoute.parentGateway.kind }}
       name: {{ .Values.observabilityUi.httpRoute.parentGateway.name }}
       namespace: {{ .Values.observabilityUi.httpRoute.parentGateway.namespace }}
       sectionName: {{ .Values.observabilityUi.httpRoute.parentGateway.sectionName }}
+    {{- end }}
   hostnames:
     - {{ .Values.observabilityUi.httpRoute.hostname | quote }}
   rules:
