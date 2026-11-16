@@ -547,115 +547,109 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     );
   };
 
-  if (isEmbedRoute || isFullscreen) {
-    return (
-      <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: tokens.bgCanvas }}>
-        <Box component="main" sx={{ flex: 1, p: isEmbedRoute ? 1 : 1.5, minHeight: 0 }}>
-          <DashboardsView
-            isEmbed={isEmbedRoute}
-            isFullscreen={isFullscreen}
-            onToggleFullscreen={toggleFullscreen}
-          />
-        </Box>
-      </Box>
-    );
-  }
+  const hideChrome = isEmbedRoute || isFullscreen;
 
   return (
     <Box sx={{ minHeight: '100vh', display: 'flex', bgcolor: tokens.bgCanvas }}>
       {/* Desktop Left Sidebar */}
-      <Box
-        component="nav"
-        sx={{
-          width: sidebarWidth,
-          flexShrink: 0,
-          display: { xs: 'none', lg: 'block' },
-          position: 'sticky',
-          top: 0,
-          height: '100vh',
-        }}
-      >
-        {renderSidebarContent(false)}
-      </Box>
+      {!hideChrome && (
+        <Box
+          component="nav"
+          sx={{
+            width: sidebarWidth,
+            flexShrink: 0,
+            display: { xs: 'none', lg: 'block' },
+            position: 'sticky',
+            top: 0,
+            height: '100vh',
+          }}
+        >
+          {renderSidebarContent(false)}
+        </Box>
+      )}
 
       {/* Mobile Drawer */}
-      <Drawer open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)}>
-        {renderSidebarContent(true)}
-      </Drawer>
+      {!hideChrome && (
+        <Drawer open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)}>
+          {renderSidebarContent(true)}
+        </Drawer>
+      )}
 
       {/* Main Column */}
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {/* Top Bar (Nightingale compact white/dark header) */}
-        <Box
-          component="header"
-          sx={{
-            height: 52,
-            px: { xs: 1.5, md: 2.5 },
-            bgcolor: tokens.bgHeader,
-            borderBottom: `1px solid ${tokens.borderSubtle}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            position: 'sticky',
-            top: 0,
-            zIndex: 10,
-          }}
-        >
-          <Stack direction="row" spacing={1.25} alignItems="center">
-            <IconButton
-              size="small"
-              onClick={() => setMobileMenuOpen(true)}
-              sx={{ display: { xs: 'inline-flex', lg: 'none' } }}
-            >
-              <SidebarCollapseIcon collapsed={true} />
-            </IconButton>
-            <Typography variant="subtitle1" fontWeight={700}>
-              {ROUTE_TITLES[activeKey]}
-            </Typography>
-          </Stack>
+        {!hideChrome && (
+          <Box
+            component="header"
+            sx={{
+              height: 52,
+              px: { xs: 1.5, md: 2.5 },
+              bgcolor: tokens.bgHeader,
+              borderBottom: `1px solid ${tokens.borderSubtle}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              position: 'sticky',
+              top: 0,
+              zIndex: 10,
+            }}
+          >
+            <Stack direction="row" spacing={1.25} alignItems="center">
+              <IconButton
+                size="small"
+                onClick={() => setMobileMenuOpen(true)}
+                sx={{ display: { xs: 'inline-flex', lg: 'none' } }}
+              >
+                <SidebarCollapseIcon collapsed={true} />
+              </IconButton>
+              <Typography variant="subtitle1" fontWeight={700}>
+                {ROUTE_TITLES[activeKey]}
+              </Typography>
+            </Stack>
 
-          <Stack direction="row" spacing={1} alignItems="center">
-            {health && (
-              <Tooltip title={`Perses ${health.version ?? 'v0.55.1'} · DB ${health.database ? 'OK' : 'DOWN'}`}>
-                <Chip
+            <Stack direction="row" spacing={1} alignItems="center">
+              {health && (
+                <Tooltip title={`Perses ${health.version ?? 'v0.55.1'} · DB ${health.database ? 'OK' : 'DOWN'}`}>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    color={health.database === false ? 'error' : 'success'}
+                    label={`v${(health.version ?? '0.55.1').replace(/^v/, '')}`}
+                    sx={{ height: 24, fontSize: 11.5, fontFamily: 'monospace' }}
+                  />
+                </Tooltip>
+              )}
+
+              <Tooltip title={`Switch to ${themeMode === 'light' ? 'Dark' : 'Light'} mode`}>
+                <Button
                   size="small"
                   variant="outlined"
-                  color={health.database === false ? 'error' : 'success'}
-                  label={`v${(health.version ?? '0.55.1').replace(/^v/, '')}`}
-                  sx={{ height: 24, fontSize: 11.5, fontFamily: 'monospace' }}
-                />
+                  onClick={onToggleTheme}
+                  startIcon={themeMode === 'light' ? <MoonIcon fontSize="small" /> : <SunIcon fontSize="small" />}
+                  sx={{ height: 28, fontSize: 12 }}
+                >
+                  {themeMode === 'light' ? 'Dark' : 'Light'}
+                </Button>
               </Tooltip>
-            )}
 
-            <Tooltip title={`Switch to ${themeMode === 'light' ? 'Dark' : 'Light'} mode`}>
               <Button
                 size="small"
-                variant="outlined"
-                onClick={onToggleTheme}
-                startIcon={themeMode === 'light' ? <MoonIcon fontSize="small" /> : <SunIcon fontSize="small" />}
+                color="inherit"
+                startIcon={<Logout fontSize="small" />}
+                onClick={handleLogout}
                 sx={{ height: 28, fontSize: 12 }}
               >
-                {themeMode === 'light' ? 'Dark' : 'Light'}
+                Sign out
               </Button>
-            </Tooltip>
-
-            <Button
-              size="small"
-              color="inherit"
-              startIcon={<Logout fontSize="small" />}
-              onClick={handleLogout}
-              sx={{ height: 28, fontSize: 12 }}
-            >
-              Sign out
-            </Button>
-          </Stack>
-        </Box>
+            </Stack>
+          </Box>
+        )}
 
         {/* Active View Workspace */}
-        <Box component="main" sx={{ flex: 1, p: { xs: 1.5, md: 2 }, minHeight: 0 }}>
-          {activeKey === 'dashboards' && (
+        <Box component="main" sx={{ flex: 1, p: isEmbedRoute ? 1 : isFullscreen ? 1.5 : { xs: 1.5, md: 2 }, minHeight: 0 }}>
+          {(activeKey === 'dashboards' || isEmbedRoute) && (
             <DashboardsView
-              isEmbed={false}
+              isEmbed={isEmbedRoute}
               isFullscreen={isFullscreen}
               onToggleFullscreen={toggleFullscreen}
             />
