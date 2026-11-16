@@ -8,7 +8,7 @@ import type {
   RoleBindingResource,
   RoleResource,
 } from '@perses-dev/client';
-import { buildProxyUrl, fetch as persesFetch, fetchJson } from '@perses-dev/client';
+import { buildProxyUrl, fetchJson } from '@perses-dev/client';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
@@ -194,7 +194,7 @@ async function throwForBadResponse(res: Response, url: string): Promise<never> {
 }
 
 async function apiGetJson<T>(url: string): Promise<T> {
-  const res = await persesFetch(url, {
+  const res = await globalThis.fetch(url, {
     method: 'GET',
     credentials: 'include',
     headers: { Accept: 'application/json' },
@@ -206,7 +206,7 @@ async function apiGetJson<T>(url: string): Promise<T> {
 }
 
 async function apiSendJson<T>(url: string, method: 'POST' | 'PUT', payload: unknown): Promise<T> {
-  const res = await persesFetch(url, {
+  const res = await globalThis.fetch(url, {
     method,
     credentials: 'include',
     headers: {
@@ -226,7 +226,7 @@ async function apiSendJson<T>(url: string, method: 'POST' | 'PUT', payload: unkn
 }
 
 async function apiDelete(url: string): Promise<void> {
-  const res = await persesFetch(url, {
+  const res = await globalThis.fetch(url, {
     method: 'DELETE',
     credentials: 'include',
     headers: { Accept: 'application/json' },
@@ -1508,7 +1508,7 @@ async function fetchGlobalJsonConfig<T>(
   }
 
   try {
-    const res = await persesFetch(`/api/v1/globalvariables/${encodeURIComponent(varName)}`, {
+    const res = await globalThis.fetch(`/api/v1/globalvariables/${encodeURIComponent(varName)}`, {
       method: 'GET',
       credentials: 'include',
       headers: { Accept: 'application/json' },
@@ -1556,7 +1556,7 @@ async function saveGlobalJsonConfig<T>(
     },
   };
 
-  const putRes = await persesFetch(`/api/v1/globalvariables/${encodeURIComponent(varName)}`, {
+  const putRes = await globalThis.fetch(`/api/v1/globalvariables/${encodeURIComponent(varName)}`, {
     method: 'PUT',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -1564,7 +1564,7 @@ async function saveGlobalJsonConfig<T>(
   });
 
   if (putRes.status === 404) {
-    const postRes = await persesFetch('/api/v1/globalvariables', {
+    const postRes = await globalThis.fetch('/api/v1/globalvariables', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
