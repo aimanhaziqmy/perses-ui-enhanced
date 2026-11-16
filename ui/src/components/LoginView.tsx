@@ -125,7 +125,7 @@ export function LoginView({
                     startIcon={<ShieldCheck />}
                     onClick={() => handleExternalLogin('oidc', provider.slug_id)}
                   >
-                    Sign in with {provider.name}
+                    Sign in with {provider.name || provider.slug_id}
                   </Button>
                 ))}
                 {oauthProviders.map((provider) => (
@@ -137,7 +137,7 @@ export function LoginView({
                     startIcon={<ShieldCheck />}
                     onClick={() => handleExternalLogin('oauth', provider.slug_id)}
                   >
-                    Sign in with {provider.name}
+                    Sign in with {provider.name || provider.slug_id}
                   </Button>
                 ))}
               </Stack>

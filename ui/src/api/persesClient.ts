@@ -241,7 +241,7 @@ export function fetchPersesHealth(): Promise<PersesHealthResponse> {
 }
 
 export function fetchPersesConfig(): Promise<PersesFrontendConfig> {
-  return apiGetJson<PersesFrontendConfig>('/api/v1/config');
+  return apiGetJson<PersesFrontendConfig>('/api/config');
 }
 
 export async function loginNative(login: string, password: string): Promise<void> {

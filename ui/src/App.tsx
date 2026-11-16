@@ -20,6 +20,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import {
   type SiteBrandingConfig,
+  ForbiddenError,
   UnauthorizedError,
   applySiteBrandingToDocument,
   fetchClusterSiteBranding,
@@ -211,6 +212,11 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
         setBranding(remote);
       });
     } catch (err) {
+      if (err instanceof ForbiddenError) {
+        setCurrentUsername(getCurrentPersesUsername());
+        setSessionState('authenticated');
+        return;
+      }
       if (err instanceof UnauthorizedError) {
         const refreshed = await refreshAuthSession();
         if (refreshed) {
@@ -222,7 +228,12 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
               setBranding(remote);
             });
             return;
-          } catch {
+          } catch (refreshErr) {
+            if (refreshErr instanceof ForbiddenError) {
+              setCurrentUsername(getCurrentPersesUsername());
+              setSessionState('authenticated');
+              return;
+            }
             // Fall through to unauthenticated login view
           }
         }

@@ -97,13 +97,68 @@ export function VictoriaLogsBrandIcon({ size = 18 }: { size?: number }) {
 
 export function LinuxBadgeIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" fill="#FACC15" />
-      <circle cx="9.2" cy="10" r="1.4" fill="#1E293B" />
-      <circle cx="14.8" cy="10" r="1.4" fill="#1E293B" />
-      <path d="M9.5 13.8C10.8 14.9 13.2 14.9 14.5 13.8" stroke="#1E293B" strokeWidth="1.6" strokeLinecap="round" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      {/* Tux penguin body & flippers */}
+      <path
+        d="M12 2.2c-2.6 0-4.3 1.9-4.3 4.6 0 1.2.3 2.1.3 2.7-.8 1.2-2.7 3.8-3.3 6.2-.3 1.2.3 2.1 1.2 2.2.7.1 1.3-.4 1.7-1 .6 1.9 2.1 3.3 4.4 3.3s3.8-1.4 4.4-3.3c.4.6 1 1.1 1.7 1 .9-.1 1.5-1 1.2-2.2-.6-2.4-2.5-5-3.3-6.2 0-.6.3-1.5.3-2.7C16.3 4.1 14.6 2.2 12 2.2z"
+        fill="#1E293B"
+      />
+      {/* White belly */}
+      <ellipse cx="12" cy="14.5" rx="3.9" ry="4.8" fill="#F8FAFC" />
+      {/* Eyes */}
+      <circle cx="10.4" cy="6.1" r="1.05" fill="#FFFFFF" />
+      <circle cx="13.6" cy="6.1" r="1.05" fill="#FFFFFF" />
+      <circle cx="10.6" cy="6.1" r="0.5" fill="#0F172A" />
+      <circle cx="13.4" cy="6.1" r="0.5" fill="#0F172A" />
+      {/* Beak */}
+      <path d="M10.2 7.6c0-.4.8-.7 1.8-.7s1.8.3 1.8.7c0 .6-.8 1.5-1.8 1.5s-1.8-.9-1.8-1.5z" fill="#F59E0B" />
+      {/* Feet */}
+      <ellipse cx="9" cy="20.4" rx="2.3" ry="1.2" fill="#F59E0B" />
+      <ellipse cx="15" cy="20.4" rx="2.3" ry="1.2" fill="#F59E0B" />
     </svg>
   );
+}
+
+export function WindowsBadgeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <rect x="3" y="3" width="8.5" height="8.5" rx="1" fill="#0078D4" />
+      <rect x="12.5" y="3" width="8.5" height="8.5" rx="1" fill="#0078D4" />
+      <rect x="3" y="12.5" width="8.5" height="8.5" rx="1" fill="#0078D4" />
+      <rect x="12.5" y="12.5" width="8.5" height="8.5" rx="1" fill="#0078D4" />
+    </svg>
+  );
+}
+
+export function MacOsBadgeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path d="M15.2 2.2c0 1.4-.5 2.7-1.4 3.6-.9.9-2.2 1.5-3.4 1.4-.1-1.3.5-2.6 1.4-3.5.9-.9 2.2-1.5 3.4-1.5z" />
+      <path d="M18.9 12.6c0-2.6 2.1-3.9 2.2-4-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.3-.9-1.7 0-3.3 1-4.1 2.5-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.5 1.3-.1 1.8-.8 3.4-.8 1.6 0 2 .8 3.3.8 1.4 0 2.3-1.2 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.9-1.1-2.9-4.2z" />
+    </svg>
+  );
+}
+
+export function OsBadgeIcon({
+  os,
+  osImage,
+  size = 14,
+}: {
+  os?: string;
+  osImage?: string;
+  size?: number;
+}) {
+  const normalizedOs = (os ?? '').trim().toLowerCase();
+  const normalizedImage = (osImage ?? '').trim().toLowerCase();
+  const target = normalizedOs || normalizedImage;
+
+  if (/\b(win|windows)\b/.test(target) || normalizedOs.startsWith('win')) {
+    return <WindowsBadgeIcon size={size} />;
+  }
+  if (/\b(darwin|mac|macos|osx)\b/.test(target) || normalizedOs === 'darwin' || normalizedOs.startsWith('mac')) {
+    return <MacOsBadgeIcon size={size} />;
+  }
+  return <LinuxBadgeIcon size={size} />;
 }
 
 export function NavExplorerIcon(props: SvgIconProps) {

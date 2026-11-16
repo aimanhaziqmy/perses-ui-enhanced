@@ -37,7 +37,7 @@ import {
   useDatasourceTargets,
 } from '../api/persesClient';
 import { PALETTE_TOKENS } from '../theme/persesTheme';
-import { LinuxBadgeIcon } from './BrandIcons';
+import { OsBadgeIcon } from './BrandIcons';
 
 function formatUptime(seconds: number | null): string {
   if (seconds === null || seconds < 0) return '-';
@@ -552,7 +552,7 @@ export function HostsView() {
         </Box>
 
         {/* Host Filter & Table Card */}
-        <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <Box
             sx={{
               p: 1.5,
@@ -606,19 +606,19 @@ export function HostsView() {
             </Stack>
           </Box>
 
-          <TableContainer sx={{ flex: 1 }}>
-            <Table size="small" stickyHeader>
+          <TableContainer sx={{ flex: 1, overflowX: 'auto' }}>
+            <Table size="small" stickyHeader sx={{ minWidth: 1080 }}>
               <TableHead>
                 <TableRow>
-                  <TableCell>Identifier</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Kubelet / Agent</TableCell>
-                  <TableCell>Reported tags</TableCell>
-                  <TableCell>Business groups</TableCell>
-                  <TableCell>Updated at</TableCell>
-                  <TableCell sx={{ minWidth: 130 }}>Memory</TableCell>
-                  <TableCell sx={{ minWidth: 130 }}>CPU</TableCell>
-                  <TableCell>Uptime</TableCell>
+                  <TableCell sx={{ minWidth: 230, whiteSpace: 'nowrap' }}>Identifier</TableCell>
+                  <TableCell sx={{ minWidth: 100, whiteSpace: 'nowrap' }}>Status</TableCell>
+                  <TableCell sx={{ minWidth: 130, whiteSpace: 'nowrap' }}>Kubelet / Agent</TableCell>
+                  <TableCell sx={{ minWidth: 180, whiteSpace: 'nowrap' }}>Reported tags</TableCell>
+                  <TableCell sx={{ minWidth: 170, whiteSpace: 'nowrap' }}>Business groups</TableCell>
+                  <TableCell sx={{ minWidth: 100, whiteSpace: 'nowrap' }}>Updated at</TableCell>
+                  <TableCell sx={{ minWidth: 135, whiteSpace: 'nowrap' }}>Memory</TableCell>
+                  <TableCell sx={{ minWidth: 135, whiteSpace: 'nowrap' }}>CPU</TableCell>
+                  <TableCell sx={{ minWidth: 100, whiteSpace: 'nowrap' }}>Uptime</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -633,16 +633,16 @@ export function HostsView() {
                 ) : (
                   pagedHosts.map((host) => (
                     <TableRow key={host.hostname} hover>
-                      <TableCell>
-                        <Typography variant="body2" fontWeight={600}>
+                      <TableCell sx={{ minWidth: 230 }}>
+                        <Typography variant="body2" fontWeight={600} noWrap>
                           {host.hostname}
                         </Typography>
-                        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mt: 0.25 }}>
+                        <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mt: 0.25, whiteSpace: 'nowrap' }}>
                           <Typography variant="caption" color="text.secondary">
                             IP {host.ip}
                           </Typography>
                           <Stack direction="row" spacing={0.5} alignItems="center">
-                            <LinuxBadgeIcon size={13} />
+                            <OsBadgeIcon os={host.os} osImage={host.osImage} size={13} />
                             <Typography variant="caption" color="text.secondary">
                               {host.os} {host.cores > 0 ? `${host.cores} Cores` : ''} {host.arch}
                             </Typography>
@@ -650,7 +650,7 @@ export function HostsView() {
                         </Stack>
                       </TableCell>
 
-                      <TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         <Chip
                           size="small"
                           label={host.online ? '● Online' : '● Offline'}
@@ -670,7 +670,7 @@ export function HostsView() {
                         />
                       </TableCell>
 
-                      <TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         <Chip
                           size="small"
                           label={host.kubeletVersion}
@@ -698,12 +698,12 @@ export function HostsView() {
                       </TableCell>
 
                       <TableCell>
-                        <Stack direction="column" spacing={0.4}>
+                        <Stack direction="column" spacing={0.4} alignItems="flex-start">
                           {host.groups.map((grp) => (
                             <Chip
                               key={grp}
                               size="small"
-                              label={grp}
+                              label={grp.replace(/^Kubernetes Cluster - /, '')}
                               sx={{
                                 height: 20,
                                 fontSize: 11,
@@ -715,7 +715,7 @@ export function HostsView() {
                         </Stack>
                       </TableCell>
 
-                      <TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         <Stack direction="row" spacing={0.75} alignItems="center">
                           <Box sx={{ width: 3, height: 14, borderRadius: 1, bgcolor: host.online ? '#22C55E' : '#EF4444' }} />
                           <Typography variant="caption" color="text.secondary">
@@ -785,7 +785,7 @@ export function HostsView() {
                         )}
                       </TableCell>
 
-                      <TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         <Stack direction="row" spacing={0.75} alignItems="center">
                           <Box sx={{ width: 3, height: 14, borderRadius: 1, bgcolor: '#22C55E' }} />
                           <Typography variant="caption" fontWeight={500}>
