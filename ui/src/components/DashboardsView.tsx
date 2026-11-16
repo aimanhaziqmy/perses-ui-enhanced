@@ -40,18 +40,22 @@ import { PluginRegistry, ValidationProvider, remotePluginLoader } from '@perses-
 import ArrowLeft from 'mdi-material-ui/ArrowLeft';
 import ChevronDown from 'mdi-material-ui/ChevronDown';
 import ChevronRight from 'mdi-material-ui/ChevronRight';
+import Check from 'mdi-material-ui/Check';
 import ContentCopy from 'mdi-material-ui/ContentCopy';
 import DeleteOutline from 'mdi-material-ui/DeleteOutline';
 import DownloadOutline from 'mdi-material-ui/DownloadOutline';
 import EyeOutline from 'mdi-material-ui/EyeOutline';
 import FolderPlusOutline from 'mdi-material-ui/FolderPlusOutline';
+import Fullscreen from 'mdi-material-ui/Fullscreen';
+import FullscreenExit from 'mdi-material-ui/FullscreenExit';
 import Magnify from 'mdi-material-ui/Magnify';
 import PencilOutline from 'mdi-material-ui/PencilOutline';
 import Plus from 'mdi-material-ui/Plus';
 import Refresh from 'mdi-material-ui/Refresh';
+import ShareVariantOutline from 'mdi-material-ui/ShareVariantOutline';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import {
   ForbiddenError,
@@ -73,22 +77,44 @@ import {
 } from '../api/persesClient';
 import { PALETTE_TOKENS } from '../theme/persesTheme';
 
-export function DashboardsView() {
+export function DashboardsView({
+  isEmbed = false,
+  isFullscreen = false,
+  onToggleFullscreen,
+}: {
+  isEmbed?: boolean;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
+}) {
   const muiTheme = useTheme();
   const tokens = PALETTE_TOKENS[muiTheme.palette.mode];
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const embedMatch = location.pathname.match(/^\/embed\/projects\/([^/]+)\/dashboards\/([^/]+)/);
+  const embedSearchParams = new URLSearchParams(location.search);
+  const embedProject = embedMatch ? decodeURIComponent(embedMatch[1]) : embedSearchParams.get('project') || '';
+  const embedDashboard = embedMatch ? decodeURIComponent(embedMatch[2]) : embedSearchParams.get('dashboard') || '';
+  const embedPanelKey = isEmbed ? embedSearchParams.get('panel') || '' : '';
 
   const pluginLoader = useMemo(() => remotePluginLoader({ baseURL: '', apiPrefix: '' }), []);
-  const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'detail'>(() => (isEmbed ? 'detail' : 'list'));
   const [searchText, setSearchText] = useState<string>('');
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [projectPage, setProjectPage] = useState<number>(0);
   const [projectsPerPage, setProjectsPerPage] = useState<number>(10);
-  const [selectedProject, setSelectedProject] = useState<string>('');
-  const [selectedDashboardName, setSelectedDashboardName] = useState<string>('');
+  const [selectedProject, setSelectedProject] = useState<string>(() => embedProject);
+  const [selectedDashboardName, setSelectedDashboardName] = useState<string>(() => embedDashboard);
   const [startInEditMode, setStartInEditMode] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'warning' | 'error'; text: string } | null>(null);
+
+  // Share & Embed modal state
+  const [shareTarget, setShareTarget] = useState<{ project: string; dashboard: DashboardResource } | null>(null);
+  const [shareScope, setShareScope] = useState<'dashboard' | 'panel'>('dashboard');
+  const [sharePanelKey, setSharePanelKey] = useState<string>('');
+  const [shareVisibility, setShareVisibility] = useState<'private' | 'public'>('private');
+  const [shareCopied, setShareCopied] = useState<'url' | 'iframe' | null>(null);
 
   // Project create/delete dialogs
   const [createProjOpen, setCreateProjOpen] = useState(false);
@@ -131,11 +157,13 @@ export function DashboardsView() {
   } = useQuery<ProjectResource[], Error>({
     queryKey: ['perses', 'projects'],
     queryFn: fetchProjects,
+    enabled: !isEmbed,
   });
 
   const { targets: availableDatasources } = useDatasourceTargets();
 
   useEffect(() => {
+    if (isEmbed) return;
     if (!projects || projects.length === 0) {
       setSelectedProject('');
       return;
@@ -143,7 +171,7 @@ export function DashboardsView() {
     if (!selectedProject || !projects.some((p) => p.metadata.name === selectedProject)) {
       setSelectedProject(projects[0].metadata.name);
     }
-  }, [projects, selectedProject]);
+  }, [projects, selectedProject, isEmbed]);
 
   const projectNamesKey = (projects ?? []).map((p) => p.metadata.name).join(',');
   const {
@@ -166,7 +194,7 @@ export function DashboardsView() {
       );
       return Object.fromEntries(entries);
     },
-    enabled: Boolean(projects && projects.length > 0),
+    enabled: Boolean(projects && projects.length > 0) && !isEmbed,
   });
 
   const {
@@ -176,7 +204,7 @@ export function DashboardsView() {
   } = useQuery<DashboardResource[], Error>({
     queryKey: ['perses', 'dashboards', selectedProject],
     queryFn: () => fetchDashboards(selectedProject),
-    enabled: Boolean(selectedProject),
+    enabled: Boolean(selectedProject) && !isEmbed,
   });
 
   const { data: cloneProjectDashboards = [] } = useQuery<DashboardResource[], Error>({
@@ -186,6 +214,7 @@ export function DashboardsView() {
   });
 
   useEffect(() => {
+    if (isEmbed) return;
     if (!dashboards || dashboards.length === 0) {
       setSelectedDashboardName('');
       return;
@@ -193,7 +222,7 @@ export function DashboardsView() {
     if (!selectedDashboardName || !dashboards.some((d) => d.metadata.name === selectedDashboardName)) {
       setSelectedDashboardName(dashboards[0].metadata.name);
     }
-  }, [dashboards, selectedDashboardName]);
+  }, [dashboards, selectedDashboardName, isEmbed]);
 
   const {
     data: activeDashboard,
@@ -204,6 +233,46 @@ export function DashboardsView() {
     queryFn: () => fetchDashboard(selectedProject, selectedDashboardName),
     enabled: Boolean(selectedProject && selectedDashboardName),
   });
+
+  const displayedDashboard = useMemo(() => {
+    if (!activeDashboard) return undefined;
+    if (!isEmbed || !embedPanelKey) return activeDashboard;
+    const panel = activeDashboard.spec?.panels?.[embedPanelKey];
+    if (!panel) return activeDashboard;
+    return {
+      ...activeDashboard,
+      spec: {
+        ...activeDashboard.spec,
+        panels: { [embedPanelKey]: panel },
+        layouts: [
+          {
+            kind: 'Grid' as const,
+            spec: {
+              display: { title: '' },
+              items: [
+                {
+                  x: 0,
+                  y: 0,
+                  width: 24,
+                  height: 12,
+                  content: { $ref: `#/spec/panels/${embedPanelKey}` as `#/spec/panels/${string}` },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    };
+  }, [activeDashboard, isEmbed, embedPanelKey]);
+
+  const openShareModal = (projectName: string, dash: DashboardResource) => {
+    setShareTarget({ project: projectName, dashboard: dash });
+    setShareScope('dashboard');
+    const firstPanel = Object.keys(dash.spec?.panels ?? {})[0] ?? '';
+    setSharePanelKey(firstPanel);
+    setShareVisibility('private');
+    setShareCopied(null);
+  };
 
   const datasourceApi = usePersesDatasourceApi(selectedProject || undefined);
 
@@ -932,6 +1001,11 @@ export function DashboardsView() {
                                           <ContentCopy fontSize="small" />
                                         </IconButton>
                                       </Tooltip>
+                                      <Tooltip title="Share / Embed iframe">
+                                        <IconButton size="small" onClick={() => openShareModal(pName, dash)}>
+                                          <ShareVariantOutline fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
                                       <Tooltip title="Export JSON">
                                         <IconButton size="small" onClick={() => handleExportDashboardJson(dash)}>
                                           <DownloadOutline fontSize="small" />
@@ -979,151 +1053,220 @@ export function DashboardsView() {
         </Card>
       ) : (
         <>
-          {/* Project & Dashboard Selector + Management Toolbar */}
-          <Box
-            sx={{
-              px: 2,
-              py: 1.5,
-              borderRadius: 2,
-              bgcolor: tokens.bgSurface,
-              border: `1px solid ${tokens.borderSubtle}`,
-              display: 'flex',
-              flexDirection: { xs: 'column', lg: 'row' },
-              gap: 1.5,
-              alignItems: { xs: 'stretch', lg: 'center' },
-              justifyContent: 'space-between',
-            }}
-          >
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<ArrowLeft />}
-                onClick={() => setViewMode('list')}
-              >
-                All Dashboards
-              </Button>
-              <Typography variant="body2" color="text.secondary">
-                /
+          {/* Project & Dashboard Directory Bar (hidden in embed, minimal in fullscreen, compact in View mode) */}
+          {!isEmbed && isFullscreen && (
+            <Box
+              sx={{
+                px: 1.5,
+                py: 0.75,
+                borderRadius: 1.5,
+                bgcolor: tokens.bgSurface,
+                border: `1px solid ${tokens.borderSubtle}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 1,
+              }}
+            >
+              <Typography variant="body2" fontWeight={700} noWrap>
+                {activeDashboard ? getResourceDisplayName(activeDashboard) : selectedDashboardName}
               </Typography>
-          <FormControl size="small" sx={{ minWidth: 180 }} disabled={!projects || projects.length === 0}>
-            <InputLabel id="project-select-label">Project</InputLabel>
-            <Select
-              labelId="project-select-label"
-              label="Project"
-              value={selectedProject}
-              onChange={(e) => {
-                setSelectedProject(e.target.value);
-                setSelectedDashboardName('');
-                setStartInEditMode(false);
-              }}
-            >
-              {(projects ?? []).map((p) => (
-                <MenuItem key={p.metadata.name} value={p.metadata.name}>
-                  {getResourceDisplayName(p)}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          <Tooltip title="New project">
-            <IconButton
-              size="small"
-              color="primary"
-              onClick={() => {
-                setProjError(null);
-                setCreateProjOpen(true);
-              }}
-              sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
-            >
-              <FolderPlusOutline fontSize="small" />
-            </IconButton>
-          </Tooltip>
-
-          {selectedProject && (
-            <Tooltip title={`Delete project "${selectedProject}"`}>
-              <IconButton
-                size="small"
-                color="error"
-                onClick={() => setDeleteProjOpen(true)}
-                sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
-              >
-                <DeleteOutline fontSize="small" />
-              </IconButton>
-            </Tooltip>
+              {onToggleFullscreen && (
+                <Button size="small" variant="outlined" startIcon={<FullscreenExit />} onClick={onToggleFullscreen}>
+                  Exit Fullscreen (Esc)
+                </Button>
+              )}
+            </Box>
           )}
 
-          <Typography variant="body2" color="text.secondary">
-            /
-          </Typography>
-          <FormControl size="small" sx={{ minWidth: 230 }} disabled={!dashboards || dashboards.length === 0}>
-            <InputLabel id="dashboard-select-label">Dashboard</InputLabel>
-            <Select
-              labelId="dashboard-select-label"
-              label="Dashboard"
-              value={selectedDashboardName}
-              onChange={(e) => {
-                setSelectedDashboardName(e.target.value);
-                setStartInEditMode(false);
+          {!isEmbed && !isFullscreen && (
+            <Box
+              sx={{
+                px: 1.5,
+                py: startInEditMode ? 1.25 : 0.75,
+                borderRadius: 1.5,
+                bgcolor: tokens.bgSurface,
+                border: `1px solid ${tokens.borderSubtle}`,
+                display: 'flex',
+                flexDirection: { xs: 'column', lg: 'row' },
+                gap: 1,
+                alignItems: { xs: 'stretch', lg: 'center' },
+                justifyContent: 'space-between',
               }}
             >
-              {(dashboards ?? []).map((d) => (
-                <MenuItem key={d.metadata.name} value={d.metadata.name}>
-                  {getResourceDisplayName(d)}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Button
+                  size="small"
+                  variant="text"
+                  startIcon={<ArrowLeft />}
+                  onClick={() => {
+                    setStartInEditMode(false);
+                    setViewMode('list');
+                  }}
+                >
+                  All Dashboards
+                </Button>
+                <Typography variant="body2" color="text.secondary">
+                  /
+                </Typography>
+                <FormControl size="small" sx={{ minWidth: startInEditMode ? 170 : 145 }} disabled={!projects || projects.length === 0}>
+                  <InputLabel id="project-select-label">Project</InputLabel>
+                  <Select
+                    labelId="project-select-label"
+                    label="Project"
+                    value={selectedProject}
+                    onChange={(e) => {
+                      setSelectedProject(e.target.value);
+                      setSelectedDashboardName('');
+                      setStartInEditMode(false);
+                    }}
+                  >
+                    {(projects ?? []).map((p) => (
+                      <MenuItem key={p.metadata.name} value={p.metadata.name}>
+                        {getResourceDisplayName(p)}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
 
-          <Button
-            size="small"
-            variant="contained"
-            startIcon={<Plus />}
-            disabled={!selectedProject}
-            onClick={openCreateDashboardModal}
-          >
-            New dashboard
-          </Button>
+                {startInEditMode && (
+                  <>
+                    <Tooltip title="New project">
+                      <IconButton
+                        size="small"
+                        color="primary"
+                        onClick={() => {
+                          setProjError(null);
+                          setCreateProjOpen(true);
+                        }}
+                        sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
+                      >
+                        <FolderPlusOutline fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    {selectedProject && (
+                      <Tooltip title={`Delete project "${selectedProject}"`}>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => setDeleteProjOpen(true)}
+                          sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
+                        >
+                          <DeleteOutline fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </>
+                )}
 
-          {selectedDashboardName && (
-            <Tooltip title={`Delete dashboard "${selectedDashboardName}"`}>
-              <IconButton
-                size="small"
-                color="error"
-                onClick={() => setDeleteDashOpen(true)}
-                sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
-              >
-                <DeleteOutline fontSize="small" />
-              </IconButton>
-            </Tooltip>
+                <Typography variant="body2" color="text.secondary">
+                  /
+                </Typography>
+                <FormControl size="small" sx={{ minWidth: startInEditMode ? 220 : 190 }} disabled={!dashboards || dashboards.length === 0}>
+                  <InputLabel id="dashboard-select-label">Dashboard</InputLabel>
+                  <Select
+                    labelId="dashboard-select-label"
+                    label="Dashboard"
+                    value={selectedDashboardName}
+                    onChange={(e) => {
+                      setSelectedDashboardName(e.target.value);
+                      setStartInEditMode(false);
+                    }}
+                  >
+                    {(dashboards ?? []).map((d) => (
+                      <MenuItem key={d.metadata.name} value={d.metadata.name}>
+                        {getResourceDisplayName(d)}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                {startInEditMode && (
+                  <>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<Plus />}
+                      disabled={!selectedProject}
+                      onClick={openCreateDashboardModal}
+                    >
+                      New dashboard
+                    </Button>
+                    {selectedDashboardName && (
+                      <Tooltip title={`Delete dashboard "${selectedDashboardName}"`}>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => setDeleteDashOpen(true)}
+                          sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
+                        >
+                          <DeleteOutline fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </>
+                )}
+              </Stack>
+
+              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                {startInEditMode &&
+                  (scopedDatasourceChips.length === 0 ? (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      color="warning"
+                      label="No data sources · Add one"
+                      onClick={() => navigate('/datasources')}
+                      sx={{ fontSize: 11.5, cursor: 'pointer' }}
+                    />
+                  ) : (
+                    scopedDatasourceChips.map((ds) => (
+                      <Chip
+                        key={datasourceTargetKey(ds)}
+                        size="small"
+                        variant="outlined"
+                        label={`${ds.pluginKind.replace('Datasource', '')} | ${ds.name}`}
+                        sx={{ fontFamily: 'monospace', fontSize: 11.5 }}
+                      />
+                    ))
+                  ))}
+                {activeDashboard && (
+                  <Tooltip title="Share / Embed iframe">
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<ShareVariantOutline fontSize="small" />}
+                      onClick={() => openShareModal(selectedProject, activeDashboard)}
+                    >
+                      Share
+                    </Button>
+                  </Tooltip>
+                )}
+                {onToggleFullscreen && (
+                  <Tooltip title="Fullscreen dashboard">
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<Fullscreen fontSize="small" />}
+                      onClick={onToggleFullscreen}
+                    >
+                      Fullscreen
+                    </Button>
+                  </Tooltip>
+                )}
+                <Button
+                  size="small"
+                  variant={startInEditMode ? 'contained' : 'outlined'}
+                  startIcon={<PencilOutline fontSize="small" />}
+                  onClick={() => setStartInEditMode((prev) => !prev)}
+                >
+                  {startInEditMode ? 'Done Managing' : 'Manage'}
+                </Button>
+              </Stack>
+            </Box>
           )}
-        </Stack>
 
-        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-          {scopedDatasourceChips.length === 0 ? (
-            <Chip
-              size="small"
-              variant="outlined"
-              color="warning"
-              label="No data sources · Add one"
-              onClick={() => navigate('/datasources')}
-              sx={{ fontSize: 11.5, cursor: 'pointer' }}
-            />
-          ) : (
-            scopedDatasourceChips.map((ds) => (
-              <Chip
-                key={datasourceTargetKey(ds)}
-                size="small"
-                variant="outlined"
-                label={`${ds.pluginKind.replace('Datasource', '')} | ${ds.name}`}
-                sx={{ fontFamily: 'monospace', fontSize: 11.5 }}
-              />
-            ))
-          )}
-        </Stack>
-      </Box>
-
-      {(!projects || projects.length === 0) && (
+      {!isEmbed && (!projects || projects.length === 0) && (
         <Card>
           <CardContent sx={{ py: 6, textAlign: 'center' }}>
             <Stack spacing={1.5} alignItems="center">
@@ -1183,7 +1326,7 @@ export function DashboardsView() {
         </Card>
       )}
 
-      {activeDashboard && (
+      {displayedDashboard && (
         <Box sx={{ flex: 1, minHeight: 0 }}>
           <ErrorBoundary FallbackComponent={ErrorAlert}>
             <PluginRegistry
@@ -1196,15 +1339,15 @@ export function DashboardsView() {
               <ValidationProvider>
                 <ErrorBoundary FallbackComponent={ErrorAlert}>
                   <ViewDashboard
-                    key={`${activeDashboard.metadata.project}/${activeDashboard.metadata.name}`}
-                    dashboardResource={activeDashboard}
+                    key={`${displayedDashboard.metadata.project}/${displayedDashboard.metadata.name}/${embedPanelKey}`}
+                    dashboardResource={displayedDashboard}
                     datasourceApi={datasourceApi}
-                    isInitialVariableSticky={true}
-                    isAnnotationEnabled={true}
-                    isReadonly={false}
-                    isEditing={startInEditMode}
-                    isVariableEnabled={true}
-                    isDatasourceEnabled={true}
+                    isInitialVariableSticky={!isEmbed}
+                    isAnnotationEnabled={!isEmbed}
+                    isReadonly={isEmbed}
+                    isEditing={isEmbed ? false : startInEditMode}
+                    isVariableEnabled={!isEmbed || !embedPanelKey}
+                    isDatasourceEnabled={!isEmbed}
                     onSave={handleSaveDashboard}
                   />
                 </ErrorBoundary>
@@ -1445,6 +1588,149 @@ export function DashboardsView() {
           <Button color="error" variant="contained" onClick={handleDeleteDashboard} disabled={dashSaving}>
             {dashSaving ? 'Deleting...' : 'Delete'}
           </Button>
+        </DialogActions>
+      </Dialog>
+      {/* Share & Embed Modal */}
+      <Dialog open={Boolean(shareTarget)} onClose={() => setShareTarget(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Share &amp; Embed: {shareTarget ? getResourceDisplayName(shareTarget.dashboard) : ''}
+        </DialogTitle>
+        <DialogContent dividers>
+          {shareTarget && (() => {
+            const panelEntries = Object.entries(shareTarget.dashboard.spec?.panels ?? {});
+            const origin = typeof window !== 'undefined' ? window.location.origin : '';
+            const params = new URLSearchParams();
+            if (shareScope === 'panel' && sharePanelKey) {
+              params.set('panel', sharePanelKey);
+            }
+            if (shareVisibility === 'public') {
+              params.set('public', '1');
+            }
+            const queryStr = params.toString();
+            const embedUrl = `${origin}/embed/projects/${encodeURIComponent(shareTarget.project)}/dashboards/${encodeURIComponent(shareTarget.dashboard.metadata.name)}${queryStr ? `?${queryStr}` : ''}`;
+            const iframeHtml = `<iframe src="${embedUrl}" width="100%" height="${shareScope === 'panel' ? 420 : 680}" frameborder="0" allowfullscreen></iframe>`;
+
+            const copyShare = async (kind: 'url' | 'iframe', text: string) => {
+              try {
+                await navigator.clipboard.writeText(text);
+                setShareCopied(kind);
+                setTimeout(() => setShareCopied((prev) => (prev === kind ? null : prev)), 2000);
+              } catch {
+                // Ignore clipboard errors
+              }
+            };
+
+            return (
+              <Stack spacing={2}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                  <FormControl size="small" fullWidth>
+                    <InputLabel id="share-scope-label">Share Scope</InputLabel>
+                    <Select
+                      labelId="share-scope-label"
+                      label="Share Scope"
+                      value={shareScope}
+                      onChange={(e) => setShareScope(e.target.value as 'dashboard' | 'panel')}
+                    >
+                      <MenuItem value="dashboard">Full Dashboard</MenuItem>
+                      <MenuItem value="panel" disabled={panelEntries.length === 0}>
+                        Single Panel {panelEntries.length === 0 ? '(none)' : ''}
+                      </MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  <FormControl size="small" fullWidth>
+                    <InputLabel id="share-vis-label">Access Mode</InputLabel>
+                    <Select
+                      labelId="share-vis-label"
+                      label="Access Mode"
+                      value={shareVisibility}
+                      onChange={(e) => setShareVisibility(e.target.value as 'private' | 'public')}
+                    >
+                      <MenuItem value="private">Private (Requires Login Session)</MenuItem>
+                      <MenuItem value="public">Public (Unauthenticated / Guest Read)</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Stack>
+
+                {shareScope === 'panel' && panelEntries.length > 0 && (
+                  <FormControl size="small" fullWidth>
+                    <InputLabel id="share-panel-label">Select Panel</InputLabel>
+                    <Select
+                      labelId="share-panel-label"
+                      label="Select Panel"
+                      value={sharePanelKey}
+                      onChange={(e) => setSharePanelKey(e.target.value)}
+                    >
+                      {panelEntries.map(([key, panel]) => (
+                        <MenuItem key={key} value={key}>
+                          {panel.spec?.display?.name || key} ({key})
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )}
+
+                {shareVisibility === 'public' ? (
+                  <Alert severity="info">
+                    Public embeds bypass the login screen. Make sure Perses <code>guest_permissions</code> in Helm{' '}
+                    <code>values.yaml</code> grants <code>read</code> on <code>Dashboard</code>, <code>Datasource</code>,
+                    and <code>GlobalDatasource</code> for unauthenticated visitors.
+                  </Alert>
+                ) : (
+                  <Alert severity="info">
+                    Private embeds reuse the viewer&apos;s Perses/Keycloak browser session. For cross-domain{' '}
+                    <code>&lt;iframe&gt;</code> embeds, set <code>perses.config.security.cookie.same_site: none</code>{' '}
+                    (with HTTPS).
+                  </Alert>
+                )}
+
+                <TextField
+                  label="Embed URL"
+                  size="small"
+                  value={embedUrl}
+                  fullWidth
+                  InputProps={{
+                    readOnly: true,
+                    sx: { fontFamily: 'monospace', fontSize: 12 },
+                    endAdornment: (
+                      <Button
+                        size="small"
+                        startIcon={shareCopied === 'url' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                        onClick={() => void copyShare('url', embedUrl)}
+                      >
+                        {shareCopied === 'url' ? 'Copied' : 'Copy'}
+                      </Button>
+                    ),
+                  }}
+                />
+
+                <TextField
+                  label="HTML <iframe> Snippet"
+                  size="small"
+                  value={iframeHtml}
+                  fullWidth
+                  multiline
+                  minRows={2}
+                  InputProps={{
+                    readOnly: true,
+                    sx: { fontFamily: 'monospace', fontSize: 12 },
+                    endAdornment: (
+                      <Button
+                        size="small"
+                        startIcon={shareCopied === 'iframe' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                        onClick={() => void copyShare('iframe', iframeHtml)}
+                      >
+                        {shareCopied === 'iframe' ? 'Copied' : 'Copy'}
+                      </Button>
+                    ),
+                  }}
+                />
+              </Stack>
+            );
+          })()}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShareTarget(null)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Stack>

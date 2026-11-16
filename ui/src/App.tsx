@@ -168,7 +168,11 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
   const queryClient = useQueryClient();
 
   const activeKey = navKeyFromPath(location.pathname);
+  const searchParams = new URLSearchParams(location.search);
+  const isEmbedRoute = location.pathname.startsWith('/embed/') || searchParams.get('embed') === '1';
+  const isPublicEmbed = isEmbedRoute && searchParams.get('public') === '1';
 
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [sessionState, setSessionState] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
   const [authError, setAuthError] = useState<string | undefined>(undefined);
   const [currentUsername, setCurrentUsername] = useState<string>(() => getCurrentPersesUsername());
@@ -187,6 +191,38 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
   useEffect(() => {
     applySiteBrandingToDocument(branding);
   }, [branding]);
+
+  useEffect(() => {
+    const onFsChange = () => {
+      if (!document.fullscreenElement) {
+        setIsFullscreen(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    if (!isFullscreen) {
+      setIsFullscreen(true);
+      try {
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch {
+        // Fallback to CSS kiosk mode if fullscreen API is blocked
+      }
+    } else {
+      setIsFullscreen(false);
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+      } catch {
+        // Ignore exit errors
+      }
+    }
+  };
 
   const { data: config } = useQuery({
     queryKey: ['perses', 'config'],
@@ -277,7 +313,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     );
   }
 
-  if (sessionState === 'unauthenticated') {
+  if (sessionState === 'unauthenticated' && !isPublicEmbed) {
     return (
       <LoginView
         config={config}
@@ -511,6 +547,20 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     );
   };
 
+  if (isEmbedRoute || isFullscreen) {
+    return (
+      <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: tokens.bgCanvas }}>
+        <Box component="main" sx={{ flex: 1, p: isEmbedRoute ? 1 : 1.5, minHeight: 0 }}>
+          <DashboardsView
+            isEmbed={isEmbedRoute}
+            isFullscreen={isFullscreen}
+            onToggleFullscreen={toggleFullscreen}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ minHeight: '100vh', display: 'flex', bgcolor: tokens.bgCanvas }}>
       {/* Desktop Left Sidebar */}
@@ -603,7 +653,13 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
 
         {/* Active View Workspace */}
         <Box component="main" sx={{ flex: 1, p: { xs: 1.5, md: 2 }, minHeight: 0 }}>
-          {activeKey === 'dashboards' && <DashboardsView />}
+          {activeKey === 'dashboards' && (
+            <DashboardsView
+              isEmbed={false}
+              isFullscreen={isFullscreen}
+              onToggleFullscreen={toggleFullscreen}
+            />
+          )}
           {activeKey === 'metrics' && <ExploreView />}
           {activeKey === 'logs' && <LogsExplorerView />}
           {activeKey === 'hosts' && <HostsView />}
