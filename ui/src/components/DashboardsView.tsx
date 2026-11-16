@@ -14,11 +14,19 @@ import {
   FormControl,
   FormControlLabel,
   IconButton,
+  InputAdornment,
   InputLabel,
   MenuItem,
   Select,
   Stack,
   Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TablePagination,
+  TableRow,
   Tabs,
   TextField,
   Tooltip,
@@ -29,9 +37,18 @@ import type { DashboardResource, ProjectResource } from '@perses-dev/client';
 import { ErrorAlert, ErrorBoundary, getResourceDisplayName } from '@perses-dev/components';
 import { ViewDashboard } from '@perses-dev/dashboards';
 import { PluginRegistry, ValidationProvider, remotePluginLoader } from '@perses-dev/plugin-system';
+import ArrowLeft from 'mdi-material-ui/ArrowLeft';
+import ChevronDown from 'mdi-material-ui/ChevronDown';
+import ChevronRight from 'mdi-material-ui/ChevronRight';
+import ContentCopy from 'mdi-material-ui/ContentCopy';
 import DeleteOutline from 'mdi-material-ui/DeleteOutline';
+import DownloadOutline from 'mdi-material-ui/DownloadOutline';
+import EyeOutline from 'mdi-material-ui/EyeOutline';
 import FolderPlusOutline from 'mdi-material-ui/FolderPlusOutline';
+import Magnify from 'mdi-material-ui/Magnify';
+import PencilOutline from 'mdi-material-ui/PencilOutline';
 import Plus from 'mdi-material-ui/Plus';
+import Refresh from 'mdi-material-ui/Refresh';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -63,6 +80,11 @@ export function DashboardsView() {
   const navigate = useNavigate();
 
   const pluginLoader = useMemo(() => remotePluginLoader({ baseURL: '', apiPrefix: '' }), []);
+  const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
+  const [searchText, setSearchText] = useState<string>('');
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+  const [projectPage, setProjectPage] = useState<number>(0);
+  const [projectsPerPage, setProjectsPerPage] = useState<number>(10);
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [selectedDashboardName, setSelectedDashboardName] = useState<string>('');
   const [startInEditMode, setStartInEditMode] = useState<boolean>(false);
@@ -122,6 +144,30 @@ export function DashboardsView() {
       setSelectedProject(projects[0].metadata.name);
     }
   }, [projects, selectedProject]);
+
+  const projectNamesKey = (projects ?? []).map((p) => p.metadata.name).join(',');
+  const {
+    data: allDashboardsByProject = {},
+    isInitialLoading: loadingAllDashboards,
+    refetch: refetchAllDashboards,
+  } = useQuery<Record<string, DashboardResource[]>, Error>({
+    queryKey: ['perses', 'all-dashboards', projectNamesKey],
+    queryFn: async () => {
+      const list = projects ?? [];
+      const entries = await Promise.all(
+        list.map(async (p) => {
+          try {
+            const items = await fetchDashboards(p.metadata.name);
+            return [p.metadata.name, items] as const;
+          } catch {
+            return [p.metadata.name, [] as DashboardResource[]] as const;
+          }
+        }),
+      );
+      return Object.fromEntries(entries);
+    },
+    enabled: Boolean(projects && projects.length > 0),
+  });
 
   const {
     data: dashboards,
@@ -242,9 +288,11 @@ export function DashboardsView() {
       const deleted = selectedProject;
       await deleteProject(deleted);
       await queryClient.invalidateQueries({ queryKey: ['perses', 'projects'] });
+      await queryClient.invalidateQueries({ queryKey: ['perses', 'all-dashboards'] });
       setDeleteProjOpen(false);
       setSelectedProject('');
       setSelectedDashboardName('');
+      setViewMode('list');
       setFeedback({ kind: 'success', text: `Deleted project "${deleted}".` });
     } catch (err) {
       setFeedback({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
@@ -263,6 +311,41 @@ export function DashboardsView() {
     setCloneSourceDashboard(selectedDashboardName);
     setImportJsonText('');
     setCreateDashOpen(true);
+  };
+
+  const openDashboardDetail = (projectName: string, dashboardName: string, editMode = false) => {
+    setSelectedProject(projectName);
+    setSelectedDashboardName(dashboardName);
+    setStartInEditMode(editMode);
+    setViewMode('detail');
+  };
+
+  const openCreateInProject = (
+    projectName: string,
+    mode: 'blank' | 'clone' | 'import' = 'blank',
+    sourceDashName = '',
+  ) => {
+    setSelectedProject(projectName);
+    setDashError(null);
+    setCreateMode(mode);
+    setDashName(mode === 'clone' && sourceDashName ? `${sourceDashName}-copy` : '');
+    setDashDisplayName('');
+    setCloneSourceProject(projectName);
+    setCloneSourceDashboard(sourceDashName);
+    setImportJsonText('');
+    setCreateDashOpen(true);
+  };
+
+  const handleExportDashboardJson = (dash: DashboardResource) => {
+    const blob = new Blob([JSON.stringify(dash, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${dash.metadata.name}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
   };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -455,8 +538,10 @@ export function DashboardsView() {
       try {
         const created = await createDashboard(selectedProject, payload);
         await queryClient.invalidateQueries({ queryKey: ['perses', 'dashboards', selectedProject] });
+        await queryClient.invalidateQueries({ queryKey: ['perses', 'all-dashboards'] });
         setSelectedDashboardName(created.metadata.name);
         setStartInEditMode(unsupportedCount > 0);
+        setViewMode('detail');
         setCreateDashOpen(false);
         setFeedback(
           unsupportedCount > 0
@@ -481,8 +566,10 @@ export function DashboardsView() {
     try {
       const created = await createDashboard(selectedProject, payload);
       await queryClient.invalidateQueries({ queryKey: ['perses', 'dashboards', selectedProject] });
+      await queryClient.invalidateQueries({ queryKey: ['perses', 'all-dashboards'] });
       setSelectedDashboardName(created.metadata.name);
       setStartInEditMode(createMode === 'blank');
+      setViewMode('detail');
       setCreateDashOpen(false);
       setFeedback({
         kind: 'success',
@@ -503,8 +590,10 @@ export function DashboardsView() {
       const deleted = selectedDashboardName;
       await deleteDashboard(selectedProject, deleted);
       await queryClient.invalidateQueries({ queryKey: ['perses', 'dashboards', selectedProject] });
+      await queryClient.invalidateQueries({ queryKey: ['perses', 'all-dashboards'] });
       setSelectedDashboardName('');
       setDeleteDashOpen(false);
+      setViewMode('list');
       setFeedback({ kind: 'success', text: `Deleted dashboard "${deleted}".` });
     } catch (err) {
       setFeedback({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
@@ -532,6 +621,60 @@ export function DashboardsView() {
     );
   }
 
+  const normalizedSearch = searchText.trim().toLowerCase();
+  const filteredProjectRows = useMemo(() => {
+    const list = projects ?? [];
+    return list
+      .map((proj) => {
+        const projDashboards = allDashboardsByProject[proj.metadata.name] ?? [];
+        const projMatches =
+          !normalizedSearch ||
+          proj.metadata.name.toLowerCase().includes(normalizedSearch) ||
+          getResourceDisplayName(proj).toLowerCase().includes(normalizedSearch);
+        const matchingDashboards = !normalizedSearch
+          ? projDashboards
+          : projDashboards.filter(
+              (d) =>
+                d.metadata.name.toLowerCase().includes(normalizedSearch) ||
+                getResourceDisplayName(d).toLowerCase().includes(normalizedSearch) ||
+                (d.spec?.display?.description ?? '').toLowerCase().includes(normalizedSearch),
+            );
+        if (normalizedSearch && !projMatches && matchingDashboards.length === 0) {
+          return null;
+        }
+        return {
+          project: proj,
+          dashboards: projMatches && matchingDashboards.length === 0 ? projDashboards : matchingDashboards,
+          autoExpand: Boolean(normalizedSearch && matchingDashboards.length > 0),
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null);
+  }, [projects, allDashboardsByProject, normalizedSearch]);
+
+  const pagedProjectRows = useMemo(() => {
+    const start = projectPage * projectsPerPage;
+    return filteredProjectRows.slice(start, start + projectsPerPage);
+  }, [filteredProjectRows, projectPage, projectsPerPage]);
+
+  const toggleProjectExpand = (projName: string) => {
+    setExpandedProjects((prev) => ({ ...prev, [projName]: !prev[projName] }));
+  };
+
+  const setAllExpanded = (expand: boolean) => {
+    const next: Record<string, boolean> = {};
+    for (const row of filteredProjectRows) {
+      next[row.project.metadata.name] = expand;
+    }
+    setExpandedProjects(next);
+  };
+
+  const formatShortDate = (iso?: string) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toISOString().replace('T', ' ').slice(0, 19);
+  };
+
   return (
     <Stack spacing={1.75} sx={{ height: '100%' }}>
       {feedback && (
@@ -540,28 +683,329 @@ export function DashboardsView() {
         </Alert>
       )}
 
-      {/* Project & Dashboard Selector + Management Toolbar */}
-      <Box
-        sx={{
-          px: 2,
-          py: 1.5,
-          borderRadius: 2,
-          bgcolor: tokens.bgSurface,
-          border: `1px solid ${tokens.borderSubtle}`,
-          display: 'flex',
-          flexDirection: { xs: 'column', lg: 'row' },
-          gap: 1.5,
-          alignItems: { xs: 'stretch', lg: 'center' },
-          justifyContent: 'space-between',
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Typography variant="body2" color="text.secondary" fontWeight={600}>
-            Dashboards
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            /
-          </Typography>
+      {viewMode === 'list' ? (
+        <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <Box
+            sx={{
+              px: 2,
+              py: 1.5,
+              borderBottom: `1px solid ${tokens.borderSubtle}`,
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 1.25,
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Tooltip title="Refresh projects & dashboards">
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    void queryClient.invalidateQueries({ queryKey: ['perses', 'projects'] });
+                    void refetchAllDashboards();
+                  }}
+                  sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
+                >
+                  <Refresh fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <TextField
+                size="small"
+                placeholder="Search projects or dashboards..."
+                value={searchText}
+                onChange={(e) => {
+                  setSearchText(e.target.value);
+                  setProjectPage(0);
+                }}
+                sx={{ width: { xs: '100%', sm: 290 } }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Magnify fontSize="small" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <Button size="small" variant="text" onClick={() => setAllExpanded(true)}>
+                Expand all
+              </Button>
+              <Button size="small" variant="text" onClick={() => setAllExpanded(false)}>
+                Collapse all
+              </Button>
+            </Stack>
+
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<FolderPlusOutline />}
+                onClick={() => {
+                  setProjError(null);
+                  setCreateProjOpen(true);
+                }}
+              >
+                New project
+              </Button>
+              <Button
+                size="small"
+                variant="contained"
+                startIcon={<Plus />}
+                disabled={!projects || projects.length === 0}
+                onClick={() => openCreateInProject(selectedProject || projects?.[0]?.metadata.name || '')}
+              >
+                New dashboard
+              </Button>
+            </Stack>
+          </Box>
+
+          <TableContainer sx={{ flex: 1, overflowX: 'auto' }}>
+            <Table size="small" stickyHeader sx={{ minWidth: 860 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ width: 42 }} />
+                  <TableCell sx={{ minWidth: 260 }}>Project / Dashboard</TableCell>
+                  <TableCell sx={{ minWidth: 180 }}>Details / Panels</TableCell>
+                  <TableCell sx={{ minWidth: 165, whiteSpace: 'nowrap' }}>Updated</TableCell>
+                  <TableCell align="right" sx={{ minWidth: 180, whiteSpace: 'nowrap' }}>
+                    Operations
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {loadingAllDashboards && filteredProjectRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
+                      <CircularProgress size={26} />
+                    </TableCell>
+                  </TableRow>
+                ) : pagedProjectRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        {projects && projects.length > 0
+                          ? 'No projects or dashboards match your search.'
+                          : 'No Perses projects exist yet. Click "New project" to create one.'}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  pagedProjectRows.map(({ project, dashboards: projDashboards, autoExpand }) => {
+                    const pName = project.metadata.name;
+                    const isExpanded = Boolean(expandedProjects[pName] ?? autoExpand);
+                    return (
+                      <React.Fragment key={pName}>
+                        <TableRow
+                          hover
+                          onClick={() => toggleProjectExpand(pName)}
+                          sx={{
+                            cursor: 'pointer',
+                            bgcolor: tokens.bgSubtle,
+                            '& td': { fontWeight: 600 },
+                          }}
+                        >
+                          <TableCell>
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); toggleProjectExpand(pName); }}>
+                              {isExpanded ? <ChevronDown fontSize="small" /> : <ChevronRight fontSize="small" />}
+                            </IconButton>
+                          </TableCell>
+                          <TableCell>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <Typography variant="body2" fontWeight={700}>
+                                {getResourceDisplayName(project)}
+                              </Typography>
+                              <Chip
+                                size="small"
+                                label={pName}
+                                variant="outlined"
+                                sx={{ height: 20, fontSize: 11, fontFamily: 'monospace' }}
+                              />
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              color={projDashboards.length > 0 ? 'primary' : 'default'}
+                              variant="outlined"
+                              label={`${projDashboards.length} dashboard${projDashboards.length === 1 ? '' : 's'}`}
+                              sx={{ height: 22, fontSize: 11 }}
+                            />
+                          </TableCell>
+                          <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                              {formatShortDate(project.metadata.updatedAt ?? project.metadata.createdAt)}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                            <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                              <Tooltip title={`New dashboard in "${pName}"`}>
+                                <IconButton size="small" color="primary" onClick={() => openCreateInProject(pName)}>
+                                  <Plus fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title={`Delete project "${pName}"`}>
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => {
+                                    setSelectedProject(pName);
+                                    setDeleteProjOpen(true);
+                                  }}
+                                >
+                                  <DeleteOutline fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Stack>
+                          </TableCell>
+                        </TableRow>
+
+                        {isExpanded &&
+                          (projDashboards.length === 0 ? (
+                            <TableRow>
+                              <TableCell />
+                              <TableCell colSpan={4}>
+                                <Typography variant="caption" color="text.secondary" sx={{ pl: 2 }}>
+                                  No dashboards in this project yet. Click + on the right to create or import one.
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            projDashboards.map((dash) => {
+                              const dName = dash.metadata.name;
+                              const panelCount = Object.keys(dash.spec?.panels ?? {}).length;
+                              const dsCount = Object.keys(dash.spec?.datasources ?? {}).length;
+                              return (
+                                <TableRow key={`${pName}/${dName}`} hover>
+                                  <TableCell />
+                                  <TableCell sx={{ pl: 4 }}>
+                                    <Typography
+                                      variant="body2"
+                                      fontWeight={600}
+                                      color="primary.main"
+                                      sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                                      onClick={() => openDashboardDetail(pName, dName, false)}
+                                    >
+                                      {getResourceDisplayName(dash)}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                                      {dName}
+                                      {dash.spec?.display?.description ? ` · ${dash.spec.display.description}` : ''}
+                                    </Typography>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                                      <Chip
+                                        size="small"
+                                        variant="outlined"
+                                        label={`${panelCount} panel${panelCount === 1 ? '' : 's'}`}
+                                        sx={{ height: 20, fontSize: 11 }}
+                                      />
+                                      {dsCount > 0 && (
+                                        <Chip
+                                          size="small"
+                                          variant="outlined"
+                                          label={`${dsCount} ds`}
+                                          sx={{ height: 20, fontSize: 11 }}
+                                        />
+                                      )}
+                                    </Stack>
+                                  </TableCell>
+                                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                                      {formatShortDate(dash.metadata.updatedAt ?? dash.metadata.createdAt)}
+                                    </Typography>
+                                  </TableCell>
+                                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                                    <Stack direction="row" spacing={0.25} justifyContent="flex-end">
+                                      <Tooltip title="View dashboard">
+                                        <IconButton size="small" onClick={() => openDashboardDetail(pName, dName, false)}>
+                                          <EyeOutline fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title="Edit dashboard">
+                                        <IconButton size="small" color="primary" onClick={() => openDashboardDetail(pName, dName, true)}>
+                                          <PencilOutline fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title="Clone dashboard">
+                                        <IconButton size="small" onClick={() => openCreateInProject(pName, 'clone', dName)}>
+                                          <ContentCopy fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title="Export JSON">
+                                        <IconButton size="small" onClick={() => handleExportDashboardJson(dash)}>
+                                          <DownloadOutline fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title="Delete dashboard">
+                                        <IconButton
+                                          size="small"
+                                          color="error"
+                                          onClick={() => {
+                                            setSelectedProject(pName);
+                                            setSelectedDashboardName(dName);
+                                            setDeleteDashOpen(true);
+                                          }}
+                                        >
+                                          <DeleteOutline fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </Stack>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })
+                          ))}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          <TablePagination
+            component="div"
+            count={filteredProjectRows.length}
+            page={projectPage}
+            onPageChange={(_, p) => setProjectPage(p)}
+            rowsPerPage={projectsPerPage}
+            onRowsPerPageChange={(e) => {
+              setProjectsPerPage(parseInt(e.target.value, 10));
+              setProjectPage(0);
+            }}
+            rowsPerPageOptions={[10, 25, 50]}
+          />
+        </Card>
+      ) : (
+        <>
+          {/* Project & Dashboard Selector + Management Toolbar */}
+          <Box
+            sx={{
+              px: 2,
+              py: 1.5,
+              borderRadius: 2,
+              bgcolor: tokens.bgSurface,
+              border: `1px solid ${tokens.borderSubtle}`,
+              display: 'flex',
+              flexDirection: { xs: 'column', lg: 'row' },
+              gap: 1.5,
+              alignItems: { xs: 'stretch', lg: 'center' },
+              justifyContent: 'space-between',
+            }}
+          >
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<ArrowLeft />}
+                onClick={() => setViewMode('list')}
+              >
+                All Dashboards
+              </Button>
+              <Typography variant="body2" color="text.secondary">
+                /
+              </Typography>
           <FormControl size="small" sx={{ minWidth: 180 }} disabled={!projects || projects.length === 0}>
             <InputLabel id="project-select-label">Project</InputLabel>
             <Select
@@ -768,6 +1212,8 @@ export function DashboardsView() {
             </PluginRegistry>
           </ErrorBoundary>
         </Box>
+      )}
+        </>
       )}
 
       {/* Create Project Dialog */}
