@@ -14,6 +14,8 @@ import {
   FormControlLabel,
   IconButton,
   InputLabel,
+  ListSubheader,
+  Menu,
   MenuItem,
   Select,
   Stack,
@@ -35,6 +37,7 @@ import { useTheme } from '@mui/material/styles';
 import AlertCircle from 'mdi-material-ui/AlertCircle';
 import CheckCircle from 'mdi-material-ui/CheckCircle';
 import DeleteOutline from 'mdi-material-ui/DeleteOutline';
+import Download from 'mdi-material-ui/Download';
 import MinusCircleOutline from 'mdi-material-ui/MinusCircleOutline';
 import PencilOutline from 'mdi-material-ui/PencilOutline';
 import Plus from 'mdi-material-ui/Plus';
@@ -61,6 +64,9 @@ import {
   useDatasourceTargets,
 } from '../api/persesClient';
 import { PALETTE_TOKENS } from '../theme/persesTheme';
+import type { ExportFormat } from '../utils/exportRecords';
+import { exportRecordsToFile } from '../utils/exportRecords';
+import { JsonViewer } from './JsonViewer';
 
 const SUGGESTED_GROUPS = ['Core Infrastructure', 'GPU & AI Compute', 'Workloads', 'Storage', 'Observability', 'Custom'];
 
@@ -130,6 +136,8 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
 
   const [eventsQuery, setEventsQuery] = useState<string>('stream:="k8s_events"');
   const [selectedVlKey, setSelectedVlKey] = useState<string>('');
+  const [eventsExportAnchorEl, setEventsExportAnchorEl] = useState<HTMLElement | null>(null);
+  const [exportingEvents, setExportingEvents] = useState(false);
 
   const { targets: allTargets, isLoading: loadingTargets } = useDatasourceTargets();
   const promTargets = useMemo(() => allTargets.filter((t) => t.pluginKind === 'PrometheusDatasource'), [allTargets]);
@@ -364,6 +372,36 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
     if (!q) return list;
     return list.filter((e) => JSON.stringify(e).toLowerCase().includes(q));
   }, [eventsResult, searchText]);
+
+  const handleExportEvents = async (format: ExportFormat, scope: 'loaded' | 'full') => {
+    setEventsExportAnchorEl(null);
+    if (!activeVlTarget) return;
+    setExportingEvents(true);
+    try {
+      let records = events;
+      if (scope === 'full') {
+        const startIso = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+        const endIso = new Date().toISOString();
+        const res = await queryVictoriaLogs(eventsQuery, 5000, startIso, endIso, activeVlTarget);
+        const q = searchText.trim().toLowerCase();
+        records = q
+          ? res.entries.filter((e) => JSON.stringify(e).toLowerCase().includes(q))
+          : res.entries;
+      }
+      const count = exportRecordsToFile(records as Record<string, unknown>[], format, 'cluster-events-export');
+      setFeedback({
+        kind: 'success',
+        text: `Exported ${count.toLocaleString()} cluster event${count === 1 ? '' : 's'} as ${format.toUpperCase()}.`,
+      });
+    } catch (err) {
+      setFeedback({
+        kind: 'error',
+        text: `Events export failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setExportingEvents(false);
+    }
+  };
 
   const targetOptionsForForm = form.datasourceType === 'prometheus' ? promTargets : vlTargets;
 
@@ -745,7 +783,48 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
                 sx={{ width: { xs: '100%', sm: 260 }, '& .MuiInputBase-input': { fontSize: 13, py: 0.75 } }}
               />
             </Stack>
-            <Chip size="small" variant="outlined" color="primary" label={`Events (6h): ${events.length}`} />
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Chip size="small" variant="outlined" color="primary" label={`Events (6h): ${events.length}`} />
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={exportingEvents ? <CircularProgress size={14} color="inherit" /> : <Download fontSize="small" />}
+                disabled={exportingEvents || !activeVlTarget}
+                onClick={(e) => setEventsExportAnchorEl(e.currentTarget)}
+              >
+                {exportingEvents ? 'Exporting...' : 'Export'}
+              </Button>
+              <Menu
+                anchorEl={eventsExportAnchorEl}
+                open={Boolean(eventsExportAnchorEl)}
+                onClose={() => setEventsExportAnchorEl(null)}
+              >
+                <ListSubheader sx={{ lineHeight: '28px', fontSize: 11 }}>
+                  Current results ({events.length} rows)
+                </ListSubheader>
+                <MenuItem disabled={events.length === 0} onClick={() => void handleExportEvents('csv', 'loaded')}>
+                  Export current as CSV
+                </MenuItem>
+                <MenuItem disabled={events.length === 0} onClick={() => void handleExportEvents('json', 'loaded')}>
+                  Export current as JSON
+                </MenuItem>
+                <MenuItem disabled={events.length === 0} onClick={() => void handleExportEvents('jsonl', 'loaded')}>
+                  Export current as JSONL (NDJSON)
+                </MenuItem>
+                <ListSubheader sx={{ lineHeight: '28px', fontSize: 11 }}>
+                  Full 6h range (up to 5,000 events)
+                </ListSubheader>
+                <MenuItem onClick={() => void handleExportEvents('csv', 'full')}>
+                  Export 6h range as CSV
+                </MenuItem>
+                <MenuItem onClick={() => void handleExportEvents('json', 'full')}>
+                  Export 6h range as JSON
+                </MenuItem>
+                <MenuItem onClick={() => void handleExportEvents('jsonl', 'full')}>
+                  Export 6h range as JSONL (NDJSON)
+                </MenuItem>
+              </Menu>
+            </Stack>
           </Box>
 
           {vlTargets.length === 0 && !loadingTargets ? (
@@ -1052,19 +1131,8 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
               <Typography variant="body2">
                 <strong>Detail:</strong> {selectedRule.detail}
               </Typography>
-              <Box
-                component="pre"
-                sx={{
-                  p: 1.5,
-                  borderRadius: 1,
-                  bgcolor: tokens.bgSubtle,
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  overflowX: 'auto',
-                }}
-              >
-                {selectedRule.query}
-              </Box>
+              <JsonViewer value={selectedRule.query} title="Query Expression" maxHeight={140} />
+              <JsonViewer value={selectedRule} title="Rule & Evaluation Snapshot" maxHeight={280} />
             </Stack>
           )}
         </DialogContent>

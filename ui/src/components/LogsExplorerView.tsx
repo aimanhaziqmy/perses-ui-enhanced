@@ -15,6 +15,8 @@ import {
   FormControl,
   FormControlLabel,
   IconButton,
+  ListSubheader,
+  Menu,
   MenuItem,
   Select,
   Stack,
@@ -36,6 +38,7 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import DeleteOutline from 'mdi-material-ui/DeleteOutline';
+import Download from 'mdi-material-ui/Download';
 import PencilOutline from 'mdi-material-ui/PencilOutline';
 import Plus from 'mdi-material-ui/Plus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -65,7 +68,10 @@ import {
   useDatasourceTargets,
 } from '../api/persesClient';
 import { PALETTE_TOKENS } from '../theme/persesTheme';
+import type { ExportFormat } from '../utils/exportRecords';
+import { exportRecordsToFile } from '../utils/exportRecords';
 import { VictoriaLogsBrandIcon } from './BrandIcons';
+import { JsonViewer } from './JsonViewer';
 
 interface QueryTabState {
   id: string;
@@ -237,6 +243,8 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
   const [presetError, setPresetError] = useState<string | null>(null);
   const [managePresetsOpen, setManagePresetsOpen] = useState(false);
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'warning' | 'error'; text: string } | null>(null);
+  const [exportAnchorEl, setExportAnchorEl] = useState<HTMLElement | null>(null);
+  const [exportingLogs, setExportingLogs] = useState(false);
 
   const { data: presets = DEFAULT_LOG_PRESETS } = useQuery<LogPresetItem[], Error>({
     queryKey: ['perses', 'log-presets-config'],
@@ -439,6 +447,38 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
       setTimeout(() => setCopiedJson(false), 1800);
     } catch {
       // Ignore clipboard failures in restricted contexts
+    }
+  };
+
+  const handleExportLogs = async (format: ExportFormat, scope: 'loaded' | 'full') => {
+    setExportAnchorEl(null);
+    if (!activeTarget) return;
+    setExportingLogs(true);
+    try {
+      const records =
+        scope === 'loaded'
+          ? entries
+          : (
+              await queryVictoriaLogs(
+                effectiveQuery,
+                5000,
+                startDate.toISOString(),
+                endDate.toISOString(),
+                activeTarget,
+              )
+            ).entries;
+      const count = exportRecordsToFile(records as Record<string, unknown>[], format, 'victorialogs-export');
+      setFeedback({
+        kind: 'success',
+        text: `Exported ${count.toLocaleString()} log record${count === 1 ? '' : 's'} as ${format.toUpperCase()}.`,
+      });
+    } catch (err) {
+      setFeedback({
+        kind: 'error',
+        text: `Export failed: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setExportingLogs(false);
     }
   };
 
@@ -1077,13 +1117,53 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
             />
           </Stack>
 
-          <Stack direction="row" spacing={2} alignItems="center">
+          <Stack direction="row" spacing={1.5} alignItems="center">
             <Typography variant="caption" color="text.secondary">
               Duration : <strong>{logsResult?.durationMs ?? 0} ms</strong>
             </Typography>
             <Typography variant="caption" color="text.secondary">
               Count : <strong>{entries.length}</strong>
             </Typography>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={exportingLogs ? <CircularProgress size={14} color="inherit" /> : <Download fontSize="small" />}
+              disabled={exportingLogs || !activeTarget}
+              onClick={(e) => setExportAnchorEl(e.currentTarget)}
+              sx={{ py: 0.35, fontSize: 12 }}
+            >
+              {exportingLogs ? 'Exporting...' : 'Export'}
+            </Button>
+            <Menu
+              anchorEl={exportAnchorEl}
+              open={Boolean(exportAnchorEl)}
+              onClose={() => setExportAnchorEl(null)}
+            >
+              <ListSubheader sx={{ lineHeight: '28px', fontSize: 11 }}>
+                Current results ({entries.length} rows)
+              </ListSubheader>
+              <MenuItem disabled={entries.length === 0} onClick={() => void handleExportLogs('csv', 'loaded')}>
+                Export current as CSV
+              </MenuItem>
+              <MenuItem disabled={entries.length === 0} onClick={() => void handleExportLogs('json', 'loaded')}>
+                Export current as JSON
+              </MenuItem>
+              <MenuItem disabled={entries.length === 0} onClick={() => void handleExportLogs('jsonl', 'loaded')}>
+                Export current as JSONL (NDJSON)
+              </MenuItem>
+              <ListSubheader sx={{ lineHeight: '28px', fontSize: 11 }}>
+                Full time range (up to 5,000 rows)
+              </ListSubheader>
+              <MenuItem onClick={() => void handleExportLogs('csv', 'full')}>
+                Export full range as CSV
+              </MenuItem>
+              <MenuItem onClick={() => void handleExportLogs('json', 'full')}>
+                Export full range as JSON
+              </MenuItem>
+              <MenuItem onClick={() => void handleExportLogs('jsonl', 'full')}>
+                Export full range as JSONL (NDJSON)
+              </MenuItem>
+            </Menu>
           </Stack>
         </Box>
 
@@ -1685,23 +1765,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                   </TableBody>
                 </Table>
               ) : (
-                <Box
-                  component="pre"
-                  sx={{
-                    m: 0,
-                    p: 1.5,
-                    borderRadius: 1,
-                    bgcolor: tokens.bgSubtle,
-                    border: `1px solid ${tokens.borderSubtle}`,
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    overflow: 'auto',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  {JSON.stringify(selectedEntry, null, 2)}
-                </Box>
+                <JsonViewer value={selectedEntry} title="Log Record JSON" maxHeight="100%" />
               )}
             </Box>
 

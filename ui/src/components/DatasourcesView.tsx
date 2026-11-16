@@ -57,6 +57,7 @@ import {
 } from '../api/persesClient';
 import { PALETTE_TOKENS } from '../theme/persesTheme';
 import { PrometheusBrandIcon, VictoriaLogsBrandIcon } from './BrandIcons';
+import { JsonViewer } from './JsonViewer';
 
 type UnifiedDatasourceItem =
   | { scope: 'global'; key: string; resource: GlobalDatasourceResource }
@@ -844,23 +845,7 @@ export function DatasourcesView() {
                 <strong>Status:</strong> {inspectedProbe.ok ? 'Connected' : 'Failed'} (HTTP {inspectedProbe.statusCode},{' '}
                 {inspectedProbe.latencyMs} ms)
               </Typography>
-              <Box
-                component="pre"
-                sx={{
-                  m: 0,
-                  p: 1.5,
-                  borderRadius: 1,
-                  bgcolor: tokens.bgSubtle,
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  maxHeight: 360,
-                  overflow: 'auto',
-                }}
-              >
-                {inspectedProbe.detail}
-              </Box>
+              <JsonViewer value={inspectedProbe.detail} title="Proxy Probe Response" maxHeight={380} />
             </Stack>
           )}
         </DialogContent>
