@@ -61,7 +61,8 @@ export function LogsHistogramChart({
       },
       tooltip: {
         trigger: 'axis',
-        confine: true,
+        confine: false,
+        appendToBody: true,
         axisPointer: { type: 'shadow' },
         formatter: (params: Array<{ dataIndex?: number }>) => {
           const idx = params?.[0]?.dataIndex;
