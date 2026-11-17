@@ -447,6 +447,11 @@ export async function searchTraces(
     const v3Qs = buildJaegerV3SearchParams(params);
     const v3Res = await persesFetchFn(`${basePath}/api/v3/traces?${v3Qs.toString()}`, { credentials: 'include' });
     if (v3Res.status === 401) throw new UnauthorizedError('Session expired while searching Jaeger traces');
+    if (v3Res.status === 404) {
+      const body = await v3Res.text();
+      if (body.toLowerCase().includes('no traces found')) return [];
+      throw new Error(`Jaeger v3 search HTTP 404: ${body}`);
+    }
     if (!v3Res.ok) throw new Error(`Jaeger v3 search HTTP ${v3Res.status}: ${await v3Res.text()}`);
     return parseJaegerV3TracesResponse(await v3Res.text()).sort((a, b) => b.startTimeUs - a.startTimeUs);
   }

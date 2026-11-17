@@ -291,10 +291,11 @@ export function TracesExplorerView() {
               </FormControl>
 
               <FormControl size="small" sx={{ minWidth: 200 }} disabled={operations.length === 0}>
-                <InputLabel id="trace-op-label">Operation</InputLabel>
+                <InputLabel id="trace-op-label" shrink>Operation</InputLabel>
                 <Select
                   labelId="trace-op-label"
                   label="Operation"
+                  displayEmpty
                   value={operation}
                   onChange={(e) => {
                     setOperation(e.target.value);

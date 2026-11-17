@@ -1030,7 +1030,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 Export current as JSONL (NDJSON)
               </MenuItem>
               <ListSubheader sx={{ lineHeight: '28px', fontSize: 11 }}>
-                Chunked stream (1,000/batch â€” zero timeout)
+                Chunked stream (1,000/batch {'\u2014'} zero timeout)
               </ListSubheader>
               <MenuItem onClick={() => void handleExportLogs('csv', 'stream20k')}>
                 Stream up to 20,000 logs as CSV
@@ -1099,7 +1099,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                               onClick={(e) => toggleRowExpand(globalIndex, e)}
                               sx={{ fontSize: 12, width: 24, height: 24 }}
                             >
-                              {isExpanded ? 'â–¾' : 'â–¸'}
+                              {isExpanded ? '\u25BE' : '\u25B8'}
                             </IconButton>
                           </Tooltip>
                         </TableCell>
@@ -1315,7 +1315,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
               <Chip
                 size="small"
                 variant="outlined"
-                label={`Batch #${cursorStack.length + 1} Â· up to ${LOG_BATCH_SIZE}/slice`}
+                label={`Batch #${cursorStack.length + 1} \u00B7 up to ${LOG_BATCH_SIZE}/slice`}
                 sx={{ fontFamily: 'monospace', fontSize: 11 }}
               />
               <Button
