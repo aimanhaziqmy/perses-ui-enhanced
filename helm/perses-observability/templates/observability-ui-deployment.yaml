@@ -49,7 +49,7 @@ spec:
               (while true; do
                 TOKEN_FILE="/var/run/secrets/kubernetes.io/serviceaccount/token"
                 if [ -f "$TOKEN_FILE" ]; then
-                  RAW=$(curl -sk --max-time 5 -H "Authorization: Bearer $(cat "$TOKEN_FILE")" "https://kubernetes.default.svc{{ default "/api/v1/namespaces" $ws.workspaceApiPath }}" 2>/dev/null)
+                  RAW=$(curl -s --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt --max-time 5 -H "Authorization: Bearer $(cat "$TOKEN_FILE")" "https://kubernetes.default.svc{{ default "/api/v1/namespaces" $ws.workspaceApiPath }}" 2>/dev/null)
                   if echo "$RAW" | grep -q '"items"'; then
                     printf '{"enabled":true,"data":%s}\n' "$RAW" > /tmp/workspace-map.json.tmp && mv /tmp/workspace-map.json.tmp /tmp/workspace-map.json
                   else

@@ -25,9 +25,12 @@ spec:
             - --client-id={{ .Values.oauth2Proxy.clientId }}
             - --code-challenge-method=S256
             - --oidc-issuer-url={{ .Values.oauth2Proxy.issuerUrl }}
-            - --insecure-oidc-skip-issuer-verification=true
-            - --insecure-oidc-allow-unverified-email=true
-            - --ssl-insecure-skip-verify=true
+            - --insecure-oidc-skip-issuer-verification={{ default false .Values.oauth2Proxy.insecureOidcSkipIssuerVerification }}
+            - --insecure-oidc-allow-unverified-email={{ default false .Values.oauth2Proxy.insecureOidcAllowUnverifiedEmail }}
+            - --ssl-insecure-skip-verify={{ default false .Values.oauth2Proxy.sslInsecureSkipVerify }}
+            {{- if .Values.oauth2Proxy.caSecretName }}
+            - --provider-ca-file=/etc/oauth2-proxy/ca/{{ default "ca.crt" .Values.oauth2Proxy.caSecretKey }}
+            {{- end }}
             - --login-url={{ .Values.oauth2Proxy.loginUrl }}
             - --redeem-url={{ .Values.oauth2Proxy.redeemUrl }}
             - --oidc-jwks-url={{ .Values.oauth2Proxy.jwksUrl }}
@@ -72,5 +75,15 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.oauth2Proxy.resources | nindent 12 }}
+          {{- if .Values.oauth2Proxy.caSecretName }}
+          volumeMounts:
+            - name: oidc-ca
+              mountPath: /etc/oauth2-proxy/ca
+              readOnly: true
+      volumes:
+        - name: oidc-ca
+          secret:
+            secretName: {{ .Values.oauth2Proxy.caSecretName }}
+          {{- end }}
 {{- end }}
 
