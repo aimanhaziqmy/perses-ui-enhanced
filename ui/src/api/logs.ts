@@ -671,6 +671,22 @@ export interface LogPresetItem {
 export const DEFAULT_LOG_PRESETS: LogPresetItem[] = [
   { id: 'all-logs', label: 'All logs (*)', query: '*' },
   { id: 'k8s-events', label: 'K8s Events', query: 'stream:="k8s_events"' },
+  {
+    id: 'k8s-audit-mutations',
+    label: 'K8s Audit (Mutations)',
+    query: 'stream:="k8s_audit" verb:~"create|update|patch|delete"',
+  },
+  {
+    id: 'k8s-audit-crd-rbac',
+    label: 'K8s CRD & RBAC Audit',
+    query:
+      'stream:="k8s_audit" objectRef.resource:~"customresourcedefinitions|clusterroles|clusterrolebindings|roles|rolebindings"',
+  },
+  {
+    id: 'perses-api-audit',
+    label: 'Perses UI / Auth Audit',
+    query: 'audit_type:="perses_api" method:~"POST|PUT|PATCH|DELETE"',
+  },
   { id: 'errors-warnings', label: 'Errors / Warnings', query: 'error OR warn OR OOMKilled' },
   { id: 'pod-restarts', label: 'Pod BackOff / OOM', query: 'CrashLoopBackOff OR ImagePullBackOff OR OOMKilled' },
 ];
