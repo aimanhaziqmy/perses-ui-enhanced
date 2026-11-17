@@ -23,10 +23,12 @@ import {
   ForbiddenError,
   UnauthorizedError,
   applySiteBrandingToDocument,
+  canManageSiteSettings,
   fetchClusterSiteBranding,
   fetchPersesConfig,
   fetchPersesHealth,
   fetchProjects,
+  fetchUserPermissions,
   getCurrentPersesUsername,
   getLocalSiteBranding,
   logoutPerses,
@@ -237,6 +239,15 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     retry: false,
   });
 
+  const { data: userPermissions } = useQuery({
+    queryKey: ['perses', 'user-permissions', currentUsername],
+    queryFn: () => fetchUserPermissions(currentUsername),
+    enabled: sessionState === 'authenticated' && Boolean(currentUsername) && currentUsername !== 'guest',
+    retry: false,
+  });
+
+  const isSiteAdmin = canManageSiteSettings(userPermissions);
+
   const verifySession = async () => {
     setSessionState('checking');
     setAuthError(undefined);
@@ -437,7 +448,9 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 {!collapsed && (
                   <Collapse in={isOpen}>
                     <Stack spacing={0.25} sx={{ mt: 0.25 }}>
-                      {section.items.map((item) => {
+                      {section.items
+                        .filter((item) => item.key !== 'settings' || isSiteAdmin)
+                        .map((item) => {
                         const selected = activeKey === item.key;
                         return (
                           <Box
@@ -523,18 +536,20 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
 
           {!collapsed && (
             <Stack direction="row" spacing={0.25} alignItems="center">
-              <Tooltip title="Site settings (Logo, Name, Description)">
-                <IconButton
-                  size="small"
-                  onClick={() => {
-                    navigate('/settings');
-                    if (isMobileDrawer) setMobileMenuOpen(false);
-                  }}
-                  color={activeKey === 'settings' ? 'primary' : 'inherit'}
-                >
-                  <NavSystemIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+              {isSiteAdmin && (
+                <Tooltip title="Site settings (Logo, Name, Description)">
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      navigate('/settings');
+                      if (isMobileDrawer) setMobileMenuOpen(false);
+                    }}
+                    color={activeKey === 'settings' ? 'primary' : 'inherit'}
+                  >
+                    <NavSystemIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
               <Tooltip title={`Switch to ${themeMode === 'light' ? 'Dark' : 'Light'} theme`}>
                 <IconButton size="small" onClick={onToggleTheme} color="inherit">
                   {themeMode === 'light' ? <MoonIcon fontSize="small" /> : <SunIcon fontSize="small" />}
@@ -662,7 +677,9 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
           {activeKey === 'datasources' && <DatasourcesView />}
           {activeKey === 'users' && <UsersView />}
           {activeKey === 'roles' && <RolesView />}
-          {activeKey === 'settings' && <SiteSettingsView branding={branding} onSaveBranding={handleSaveBranding} />}
+          {activeKey === 'settings' && (
+            <SiteSettingsView branding={branding} onSaveBranding={handleSaveBranding} canEdit={isSiteAdmin} />
+          )}
           {activeKey === 'about' && <SystemAboutView health={health} config={config} />}
         </Box>
       </Box>

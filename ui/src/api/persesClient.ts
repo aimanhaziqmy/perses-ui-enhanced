@@ -2413,6 +2413,22 @@ export function usePersesDatasourceApi(projectName?: string): DatasourceApi {
   );
 }
 
+export type PersesUserPermissionsMap = Record<string, PersesPermission[]>;
+
+export async function fetchUserPermissions(username: string): Promise<PersesUserPermissionsMap> {
+  if (!username || username === 'guest') return {};
+  return apiGetJson<PersesUserPermissionsMap>(`/api/v1/users/${encodeURIComponent(username)}/permissions`);
+}
+
+export function canManageSiteSettings(perms: PersesUserPermissionsMap | undefined): boolean {
+  const globalPerms = perms?.['*'] ?? [];
+  return globalPerms.some((p) => {
+    const canWrite = p.actions.includes('*') || p.actions.includes('update') || p.actions.includes('create');
+    const coversGlobalVar = p.scopes.includes('*') || p.scopes.includes('GlobalVariable');
+    return canWrite && coversGlobalVar;
+  });
+}
+
 // -----------------------------------------------------------------------------
 // Dynamic Site Branding Store (Perses GlobalVariable + localStorage)
 // -----------------------------------------------------------------------------

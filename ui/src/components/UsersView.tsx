@@ -1275,9 +1275,11 @@ export function SystemAboutView({
 export function SiteSettingsView({
   branding,
   onSaveBranding,
+  canEdit = false,
 }: {
   branding: SiteBrandingConfig;
   onSaveBranding: (next: SiteBrandingConfig) => Promise<void>;
+  canEdit?: boolean;
 }) {
   const muiTheme = useTheme();
   const tokens = PALETTE_TOKENS[muiTheme.palette.mode];
@@ -1310,6 +1312,7 @@ export function SiteSettingsView({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit) return;
     setSaving(true);
     setSaveMessage(null);
     try {
@@ -1329,6 +1332,7 @@ export function SiteSettingsView({
   };
 
   const handleReset = async () => {
+    if (!canEdit) return;
     setSaving(true);
     setSaveMessage(null);
     try {
@@ -1390,6 +1394,13 @@ export function SiteSettingsView({
             />
           </Box>
 
+          {!canEdit && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              <strong>403 — Admin Access Required:</strong> Only users with the <code>admin</code> GlobalRole (or{' '}
+              <code>GlobalVariable</code> write permission) can modify Site Settings.
+            </Alert>
+          )}
+
           {saveMessage && (
             <Alert severity={saveMessage.kind} sx={{ mb: 2 }}>
               {saveMessage.text}
@@ -1404,6 +1415,7 @@ export function SiteSettingsView({
                   helperText="Displayed in the top-left navbar, login header, and browser tab"
                   value={draft.appName}
                   onChange={(e) => setDraft((prev) => ({ ...prev, appName: e.target.value }))}
+                  disabled={!canEdit}
                   fullWidth
                   size="small"
                 />
@@ -1412,6 +1424,7 @@ export function SiteSettingsView({
                   helperText="Displayed under the active user badge at the bottom-left sidebar"
                   value={draft.orgName}
                   onChange={(e) => setDraft((prev) => ({ ...prev, orgName: e.target.value }))}
+                  disabled={!canEdit}
                   fullWidth
                   size="small"
                 />
@@ -1422,6 +1435,7 @@ export function SiteSettingsView({
                 helperText="Shown on the Login screen beneath the logo and in the browser title"
                 value={draft.appSubtitle}
                 onChange={(e) => setDraft((prev) => ({ ...prev, appSubtitle: e.target.value }))}
+                disabled={!canEdit}
                 fullWidth
                 size="small"
               />
@@ -1434,6 +1448,7 @@ export function SiteSettingsView({
                   helperText="Used inside the gradient icon when no custom logo image is set"
                   value={draft.logoText}
                   onChange={(e) => setDraft((prev) => ({ ...prev, logoText: e.target.value.slice(0, 2) }))}
+                  disabled={!canEdit}
                   sx={{ width: { xs: '100%', md: 240 } }}
                   size="small"
                 />
@@ -1442,18 +1457,26 @@ export function SiteSettingsView({
                   helperText="Paste an HTTPS image URL, or upload a PNG/SVG/JPG file using the button on the right"
                   value={draft.logoUrl}
                   onChange={(e) => setDraft((prev) => ({ ...prev, logoUrl: e.target.value }))}
+                  disabled={!canEdit}
                   fullWidth
                   size="small"
                 />
                 <Stack direction="row" spacing={1} sx={{ pt: { md: 0.25 }, flexShrink: 0 }}>
-                  <Button variant="outlined" component="label" size="medium">
+                  <Button variant="outlined" component="label" size="medium" disabled={!canEdit}>
                     Upload Logo
-                    <input type="file" hidden accept="image/png,image/jpeg,image/svg+xml,image/webp" onChange={handleFileUpload} />
+                    <input
+                      type="file"
+                      hidden
+                      disabled={!canEdit}
+                      accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                      onChange={handleFileUpload}
+                    />
                   </Button>
                   {draft.logoUrl && (
                     <Button
                       variant="text"
                       color="secondary"
+                      disabled={!canEdit}
                       onClick={() => setDraft((prev) => ({ ...prev, logoUrl: '' }))}
                     >
                       Clear Logo
@@ -1463,10 +1486,10 @@ export function SiteSettingsView({
               </Stack>
 
               <Stack direction="row" spacing={1.5} justifyContent="flex-end" sx={{ pt: 1 }}>
-                <Button variant="outlined" color="inherit" disabled={saving} onClick={handleReset}>
+                <Button variant="outlined" color="inherit" disabled={!canEdit || saving} onClick={handleReset}>
                   Reset to Default
                 </Button>
-                <Button type="submit" variant="contained" color="primary" disabled={saving}>
+                <Button type="submit" variant="contained" color="primary" disabled={!canEdit || saving}>
                   {saving ? 'Saving...' : 'Save Site Settings'}
                 </Button>
               </Stack>
