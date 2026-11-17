@@ -52,6 +52,7 @@ flowchart LR
   - **Keyset Cursor Pagination (`Latest`, `← Newer`, `Older →`)**: Keeps browser DOM/RAM flat while stepping through millions of logs.
   - **Chunked Streaming Export**: Export up to 20,000 logs (CSV/JSON) or 50,000 logs (low-RAM JSONL/NDJSON) in 1,000-row batches with live progress and cancellation.
   - Clean wrapping log stream, inline expandable structured fields (`▸` / `▾`), and a right-side **Log Detail Drawer** (`Small` / `Medium` / `Large`, **Table** / **JSON** tabs, clipboard copy, `+ filter` chips, and `↑` / `↓` / `Esc` keyboard navigation).
+- **Distributed Tracing (`Explorer → Traces`)**: Query Jaeger v1, Jaeger v2 (`/api/v3` OTLP JSON), VictoriaTraces, or Tempo datasources via Perses Proxy with service/operation/tag/duration filters, interactive span waterfall drawer, span attributes inspector, and one-click **Search in Logs** correlation.
 - **Embedded Perses Dashboards & Metrics Explorer**: Powered by `@perses-dev/dashboards`, `@perses-dev/explore`, `@perses-dev/plugin-system`, `@perses-dev/client`, and `@perses-dev/components`.
 - **Infrastructure Hosts & Configurable Alert Rules**: Real-time node CPU, memory, uptime, OS detection badges (Linux, Windows, macOS), Kubernetes node metadata, and NVIDIA DCGM GPU utilization queried from any configured Prometheus/VictoriaMetrics datasource, plus persistent Create/Edit/Delete/Enable-Disable alert rules (`GlobalVariable: alert_rules_config`) evaluated live against PromQL or LogsQL datasources and cluster events.
 - **Flexible Gateway Ingress**: Supports standard `HTTPRoute` or an optional dedicated-port HTTPS `ListenerSet` (`observabilityUi.listenerSet.enabled=true`) for IP-based access (e.g. `https://<LB_IP>:50811`) without external DNS.
@@ -101,6 +102,43 @@ kubectl port-forward -n observability svc/perses-ui-enhanced 8080:8080
 Open `http://localhost:8080` and sign in with:
 - **Username**: `admin` (from `persesAuth.nativeAdminUsername`)
 - **Password**: `changeme` (from `persesAuth.nativeAdminPassword`, override on install!)
+
+---
+
+## Distributed Tracing (Jaeger / VictoriaTraces / Tempo)
+
+### 1. Optional Built-in Jaeger v2 Deployment
+The `perses-observability` Helm chart includes an optional, disabled-by-default Jaeger v2 (`2.23.0`) all-in-one Deployment & Service (Apache 2.0):
+
+```bash
+helm upgrade --install observability ./helm/perses-observability \
+  --namespace observability \
+  --reuse-values \
+  --set jaeger.enabled=true
+```
+
+This exposes OTLP gRPC (`4317`), OTLP HTTP (`4318`), and Query HTTP (`16686`) on `svc/jaeger.<namespace>.svc.cluster.local`.
+
+### 2. Add the Trace Data Source in the UI
+No static provisioning is required. Go to **Integrations → Data sources → + Add data source**:
+- **Plugin Kind**:
+  - `Jaeger / VictoriaTraces (JaegerDatasource)` — works with Jaeger v1 (`/api/services`), Jaeger v2 (`/api/v3/services` OTLP JSON), and VictoriaTraces (`/select/jaeger` or Jaeger-compatible query endpoint).
+  - `Tempo Traces (TempoDatasource)` — works with Grafana Tempo (`/api/search`).
+- **Endpoint URL** examples:
+  - Jaeger in-cluster: `http://jaeger.observability.svc.cluster.local:16686`
+  - VictoriaTraces in-cluster: `http://<victoria-traces-svc>:10428/select/jaeger`
+- Click **Test** to verify live connectivity, then open **Explorer → Traces**.
+
+### 3. Instrumenting Applications (OTLP)
+Any service exporting OpenTelemetry traces to the collector/Jaeger OTLP receiver automatically appears in the **Service** dropdown in **Explorer → Traces**:
+
+```bash
+OTEL_SERVICE_NAME=my-service
+OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger.observability.svc.cluster.local:4318
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+```
+
+- **Log Correlation (`Search in Logs`)**: Clicking **Search in Logs** inside the Span Waterfall Drawer opens **Explorer → Logs** pre-filled with the selected `traceId`. Matching logs appear whenever your application logger (or OTel log bridge) includes the `trace_id` in structured JSON fields or the log message.
 
 ---
 

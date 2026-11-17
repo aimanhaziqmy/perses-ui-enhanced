@@ -95,6 +95,19 @@ export function VictoriaLogsBrandIcon({ size = 18 }: { size?: number }) {
   );
 }
 
+export function JaegerBrandIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="10.5" fill="#0E7490" />
+      <path d="M7.5 8.5H13.5M7.5 8.5V15.5M13.5 8.5L16.5 12L13.5 15.5" stroke="#CCFBF1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="7.5" cy="8.5" r="1.7" fill="#FFFFFF" />
+      <circle cx="16.5" cy="12" r="1.7" fill="#2DD4BF" />
+      <circle cx="7.5" cy="15.5" r="1.7" fill="#FFFFFF" />
+      <circle cx="13.5" cy="15.5" r="1.7" fill="#2DD4BF" />
+    </svg>
+  );
+}
+
 export function LinuxBadgeIcon({ size = 14 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>

@@ -56,7 +56,7 @@ import {
   updateProjectDatasource,
 } from '../api/persesClient';
 import { PALETTE_TOKENS } from '../theme/persesTheme';
-import { PrometheusBrandIcon, VictoriaLogsBrandIcon } from './BrandIcons';
+import { JaegerBrandIcon, PrometheusBrandIcon, VictoriaLogsBrandIcon } from './BrandIcons';
 import { JsonViewer } from './JsonViewer';
 
 type UnifiedDatasourceItem =
@@ -519,6 +519,8 @@ export function DatasourcesView() {
                   const ds = item.resource;
                   const probe = probes[item.key];
                   const isProm = ds.spec.plugin.kind === 'PrometheusDatasource';
+                  const isTrace =
+                    ds.spec.plugin.kind === 'JaegerDatasource' || ds.spec.plugin.kind === 'TempoDatasource';
                   const typeLabel = isProm ? 'Prometheus' : ds.spec.plugin.kind.replace('Datasource', '');
                   const { url } = extractPluginInfo(ds);
 
@@ -526,7 +528,13 @@ export function DatasourcesView() {
                     <TableRow key={item.key} hover>
                       <TableCell>
                         <Stack direction="row" spacing={1} alignItems="center">
-                          {isProm ? <PrometheusBrandIcon size={18} /> : <VictoriaLogsBrandIcon size={18} />}
+                          {isProm ? (
+                            <PrometheusBrandIcon size={18} />
+                          ) : isTrace ? (
+                            <JaegerBrandIcon size={18} />
+                          ) : (
+                            <VictoriaLogsBrandIcon size={18} />
+                          )}
                           <Typography variant="body2" fontWeight={500}>
                             {typeLabel}
                           </Typography>

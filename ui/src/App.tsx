@@ -675,7 +675,12 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
             />
           )}
           {activeKey === 'metrics' && <ExploreView />}
-          {activeKey === 'logs' && <LogsExplorerView />}
+          {activeKey === 'logs' && (
+            <LogsExplorerView
+              key={searchParams.get('query') || '__default'}
+              initialQuery={searchParams.get('query') || '*'}
+            />
+          )}
           {activeKey === 'traces' && <TracesExplorerView />}
           {activeKey === 'hosts' && <HostsView />}
           {activeKey === 'alerts' && <AlertRulesView defaultSubTab="rules" />}

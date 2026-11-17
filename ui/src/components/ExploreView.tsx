@@ -50,10 +50,11 @@ export function ExploreView() {
                     exploreTitleComponent={
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                         <FormControl size="small" sx={{ minWidth: 190 }}>
-                          <InputLabel id="explore-project-label">Datasource Scope</InputLabel>
+                          <InputLabel id="explore-project-label" shrink>Datasource Scope</InputLabel>
                           <Select
                             labelId="explore-project-label"
                             label="Datasource Scope"
+                            displayEmpty
                             value={projectName}
                             onChange={(e) => setProjectName(e.target.value)}
                           >

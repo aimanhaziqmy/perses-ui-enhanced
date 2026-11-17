@@ -584,13 +584,23 @@ export function TracesExplorerView() {
                   </>
                 )}
                 {selectedTraceId && (
-                  <Button
-                    size="small"
-                    startIcon={copiedId ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
-                    onClick={() => void copyTraceId(selectedTraceId)}
-                  >
-                    {copiedId ? 'Copied' : 'Copy ID'}
-                  </Button>
+                  <>
+                    <Button
+                      size="small"
+                      startIcon={copiedId ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                      onClick={() => void copyTraceId(selectedTraceId)}
+                    >
+                      {copiedId ? 'Copied' : 'Copy ID'}
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<Magnify fontSize="small" />}
+                      onClick={() => navigate(`/explore/logs?query=${encodeURIComponent(selectedTraceId)}`)}
+                    >
+                      Search in Logs
+                    </Button>
+                  </>
                 )}
               </Stack>
             </Box>
