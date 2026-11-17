@@ -35,7 +35,7 @@ import {
 import { MoonIcon, SidebarCollapseIcon, SunIcon } from './components/BrandIcons';
 import { LoginView } from './components/LoginView';
 import { type NavKey, Sidebar } from './components/Sidebar';
-import { ViewLoadingState } from './components/ViewStates';
+import { ViewForbiddenState, ViewLoadingState } from './components/ViewStates';
 import type { ThemeMode } from './theme/persesTheme';
 
 const DashboardsView = lazy(() =>
@@ -180,7 +180,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     retry: false,
   });
 
-  const { data: userPermissions } = useQuery({
+  const { data: userPermissions, isLoading: loadingPermissions } = useQuery({
     queryKey: queryKeys.userPermissions(currentUsername),
     queryFn: () => fetchUserPermissions(currentUsername),
     enabled: sessionState === 'authenticated' && Boolean(currentUsername) && currentUsername !== 'guest',
@@ -512,7 +512,16 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 path="/users/*"
                 element={
                   <RouteView>
-                    <UsersView />
+                    {loadingPermissions ? (
+                      <ViewLoadingState message="Checking permissions..." />
+                    ) : !capabilities.canManageUsers ? (
+                      <ViewForbiddenState
+                        description="Administrator permissions are required to manage users."
+                        onBack={() => navigate('/dashboards')}
+                      />
+                    ) : (
+                      <UsersView />
+                    )}
                   </RouteView>
                 }
               />
@@ -520,7 +529,16 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 path="/roles/*"
                 element={
                   <RouteView>
-                    <RolesView />
+                    {loadingPermissions ? (
+                      <ViewLoadingState message="Checking permissions..." />
+                    ) : !capabilities.canManageUsers ? (
+                      <ViewForbiddenState
+                        description="Administrator permissions are required to manage roles."
+                        onBack={() => navigate('/dashboards')}
+                      />
+                    ) : (
+                      <RolesView />
+                    )}
                   </RouteView>
                 }
               />
@@ -528,7 +546,16 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 path="/settings/*"
                 element={
                   <RouteView>
-                    <SiteSettingsView branding={branding} onSaveBranding={handleSaveBranding} canEdit={isSiteAdmin} />
+                    {loadingPermissions ? (
+                      <ViewLoadingState message="Checking permissions..." />
+                    ) : !isSiteAdmin ? (
+                      <ViewForbiddenState
+                        description="Only site administrators can access Site settings."
+                        onBack={() => navigate('/dashboards')}
+                      />
+                    ) : (
+                      <SiteSettingsView branding={branding} onSaveBranding={handleSaveBranding} canEdit={isSiteAdmin} />
+                    )}
                   </RouteView>
                 }
               />

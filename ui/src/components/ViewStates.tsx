@@ -100,3 +100,44 @@ export function ViewErrorState({
     </Alert>
   );
 }
+
+export interface ViewForbiddenStateProps {
+  title?: string;
+  description?: string;
+  onBack?: () => void;
+  backLabel?: string;
+}
+
+export function ViewForbiddenState({
+  title = '403 — Forbidden',
+  description = 'You do not have administrator permissions to access this page.',
+  onBack,
+  backLabel = 'Back to Dashboards',
+}: ViewForbiddenStateProps) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 360, px: 2 }}>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: 4,
+          maxWidth: 480,
+          width: '100%',
+          textAlign: 'center',
+          bgcolor: 'background.paper',
+        }}
+      >
+        <Typography variant="h5" fontWeight={700} color="error.main" gutterBottom>
+          {title}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: onBack ? 2.5 : 0 }}>
+          {description}
+        </Typography>
+        {onBack && (
+          <Button variant="contained" size="small" onClick={onBack}>
+            {backLabel}
+          </Button>
+        )}
+      </Paper>
+    </Box>
+  );
+}
