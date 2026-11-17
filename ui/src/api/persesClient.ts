@@ -601,6 +601,28 @@ export async function probeDatasource(
     };
   }
 
+  if (kind === 'JaegerDatasource') {
+    const url = `${basePath}/api/services`;
+    const res = await globalThis.fetch(url, { credentials: 'include' });
+    const latencyMs = Math.round(performance.now() - started);
+    const text = await res.text();
+    if (!res.ok) {
+      return { key, name, scope, project, kind, ok: false, statusCode: res.status, latencyMs, detail: text || res.statusText };
+    }
+    return { key, name, scope, project, kind, ok: true, statusCode: res.status, latencyMs, detail: text };
+  }
+
+  if (kind === 'TempoDatasource') {
+    const url = `${basePath}/api/search?limit=1`;
+    const res = await globalThis.fetch(url, { credentials: 'include' });
+    const latencyMs = Math.round(performance.now() - started);
+    const text = await res.text();
+    if (!res.ok) {
+      return { key, name, scope, project, kind, ok: false, statusCode: res.status, latencyMs, detail: text || res.statusText };
+    }
+    return { key, name, scope, project, kind, ok: true, statusCode: res.status, latencyMs, detail: text };
+  }
+
   const latencyMs = Math.round(performance.now() - started);
   return {
     key,
@@ -611,7 +633,7 @@ export async function probeDatasource(
     ok: false,
     statusCode: 0,
     latencyMs,
-    detail: `Live probe is only built-in for PrometheusDatasource and VictoriaLogsDatasource (plugin kind: ${kind}).`,
+    detail: `Live probe is only built-in for PrometheusDatasource, VictoriaLogsDatasource, JaegerDatasource, and TempoDatasource (plugin kind: ${kind}).`,
   };
 }
 
@@ -2522,4 +2544,291 @@ export async function saveClusterSiteBranding(cfg: SiteBrandingConfig): Promise<
     'Dynamic application name, subtitle, organization label, and logo.',
   );
   return setLocalSiteBranding(normalized);
+}
+
+// -----------------------------------------------------------------------------
+// Distributed Tracing Helpers (Jaeger / VictoriaTraces & Tempo via Perses Proxy)
+// -----------------------------------------------------------------------------
+
+export interface TraceTag {
+  key: string;
+  value: string;
+}
+
+export interface TraceSpan {
+  spanId: string;
+  parentSpanId?: string;
+  operationName: string;
+  serviceName: string;
+  startTimeUs: number;
+  durationUs: number;
+  relativeStartUs: number;
+  depth: number;
+  hasError: boolean;
+  tags: TraceTag[];
+  processTags: TraceTag[];
+}
+
+export interface TraceSummary {
+  traceId: string;
+  rootService: string;
+  rootOperation: string;
+  startTimeUs: number;
+  durationUs: number;
+  spanCount: number;
+  errorCount: number;
+  services: string[];
+}
+
+export interface TraceDetail extends TraceSummary {
+  spans: TraceSpan[];
+}
+
+interface RawJaegerSpan {
+  spanID?: string;
+  operationName?: string;
+  startTime?: number;
+  duration?: number;
+  processID?: string;
+  references?: Array<{ refType?: string; spanID?: string }>;
+  tags?: Array<{ key?: string; value?: unknown }>;
+}
+
+interface RawJaegerTrace {
+  traceID?: string;
+  spans?: RawJaegerSpan[];
+  processes?: Record<string, { serviceName?: string; tags?: Array<{ key?: string; value?: unknown }> }>;
+}
+
+export function normalizeJaegerTrace(raw: RawJaegerTrace): TraceDetail {
+  const traceId = String(raw.traceID ?? '');
+  const processes = raw.processes ?? {};
+  const rawSpans = Array.isArray(raw.spans) ? raw.spans : [];
+
+  let minStartUs = Number.POSITIVE_INFINITY;
+  let maxEndUs = 0;
+
+  const flatSpans: TraceSpan[] = rawSpans.map((s) => {
+    const startUs = Number(s.startTime ?? 0);
+    const durUs = Math.max(0, Number(s.duration ?? 0));
+    if (startUs < minStartUs) minStartUs = startUs;
+    if (startUs + durUs > maxEndUs) maxEndUs = startUs + durUs;
+
+    const proc = s.processID ? processes[s.processID] : undefined;
+    const serviceName = proc?.serviceName || 'unknown';
+    const childOf = (s.references ?? []).find((r) => r.refType === 'CHILD_OF' || !r.refType);
+    const tags: TraceTag[] = (s.tags ?? [])
+      .filter((t) => Boolean(t.key))
+      .map((t) => ({ key: String(t.key), value: String(t.value ?? '') }));
+    const processTags: TraceTag[] = (proc?.tags ?? [])
+      .filter((t) => Boolean(t.key))
+      .map((t) => ({ key: String(t.key), value: String(t.value ?? '') }));
+
+    const hasError = tags.some(
+      (t) =>
+        (t.key === 'error' && t.value === 'true') ||
+        (t.key === 'otel.status_code' && t.value.toUpperCase() === 'ERROR') ||
+        (t.key === 'http.status_code' && Number(t.value) >= 500),
+    );
+
+    return {
+      spanId: String(s.spanID ?? ''),
+      parentSpanId: childOf?.spanID,
+      operationName: String(s.operationName ?? 'unknown'),
+      serviceName,
+      startTimeUs: startUs,
+      durationUs: durUs,
+      relativeStartUs: 0,
+      depth: 0,
+      hasError,
+      tags,
+      processTags,
+    };
+  });
+
+  if (!Number.isFinite(minStartUs)) minStartUs = 0;
+  const byId = new Map<string, TraceSpan>();
+  const childrenByParent = new Map<string, TraceSpan[]>();
+  for (const sp of flatSpans) {
+    sp.relativeStartUs = Math.max(0, sp.startTimeUs - minStartUs);
+    byId.set(sp.spanId, sp);
+  }
+  const roots: TraceSpan[] = [];
+  for (const sp of flatSpans) {
+    if (sp.parentSpanId && byId.has(sp.parentSpanId)) {
+      const list = childrenByParent.get(sp.parentSpanId) ?? [];
+      list.push(sp);
+      childrenByParent.set(sp.parentSpanId, list);
+    } else {
+      roots.push(sp);
+    }
+  }
+
+  roots.sort((a, b) => a.startTimeUs - b.startTimeUs);
+  const ordered: TraceSpan[] = [];
+  const visit = (node: TraceSpan, depth: number, visited: Set<string>) => {
+    if (visited.has(node.spanId)) return;
+    visited.add(node.spanId);
+    node.depth = depth;
+    ordered.push(node);
+    const kids = (childrenByParent.get(node.spanId) ?? []).sort((a, b) => a.startTimeUs - b.startTimeUs);
+    for (const k of kids) {
+      visit(k, depth + 1, visited);
+    }
+  };
+  const visited = new Set<string>();
+  for (const r of roots) visit(r, 0, visited);
+  for (const sp of flatSpans) {
+    if (!visited.has(sp.spanId)) visit(sp, 0, visited);
+  }
+
+  const root = ordered[0];
+  const services = Array.from(new Set(ordered.map((s) => s.serviceName)));
+  const errorCount = ordered.filter((s) => s.hasError).length;
+
+  return {
+    traceId,
+    rootService: root?.serviceName ?? services[0] ?? 'unknown',
+    rootOperation: root?.operationName ?? 'unknown',
+    startTimeUs: minStartUs,
+    durationUs: Math.max(0, maxEndUs - minStartUs),
+    spanCount: ordered.length,
+    errorCount,
+    services,
+    spans: ordered,
+  };
+}
+
+export function buildJaegerSearchParams(params: {
+  service?: string;
+  operation?: string;
+  startIso: string;
+  endIso: string;
+  minDuration?: string;
+  maxDuration?: string;
+  tags?: string;
+  limit?: number;
+}): URLSearchParams {
+  const qs = new URLSearchParams();
+  if (params.service) qs.set('service', params.service);
+  if (params.operation) qs.set('operation', params.operation);
+  const startMs = new Date(params.startIso).getTime();
+  const endMs = new Date(params.endIso).getTime();
+  if (Number.isFinite(startMs)) qs.set('start', String(Math.floor(startMs * 1000)));
+  if (Number.isFinite(endMs)) qs.set('end', String(Math.floor(endMs * 1000)));
+  if (params.minDuration?.trim()) qs.set('minDuration', params.minDuration.trim());
+  if (params.maxDuration?.trim()) qs.set('maxDuration', params.maxDuration.trim());
+  if (params.tags?.trim()) {
+    const tagMap: Record<string, string> = {};
+    for (const part of params.tags.split(/\s+/)) {
+      const idx = part.indexOf('=');
+      if (idx > 0) {
+        tagMap[part.slice(0, idx)] = part.slice(idx + 1);
+      }
+    }
+    if (Object.keys(tagMap).length > 0) {
+      qs.set('tags', JSON.stringify(tagMap));
+    }
+  }
+  qs.set('limit', String(params.limit ?? 20));
+  return qs;
+}
+
+export async function fetchTraceServices(target: DatasourceTarget): Promise<string[]> {
+  const basePath = buildProxyBasePath(target);
+  if (target.pluginKind === 'TempoDatasource') {
+    const res = await globalThis.fetch(`${basePath}/api/search/tag/service.name/values`, { credentials: 'include' });
+    if (res.status === 401) throw new UnauthorizedError('Session expired while loading trace services');
+    if (!res.ok) throw new Error(`Tempo services HTTP ${res.status}: ${await res.text()}`);
+    const payload = (await res.json()) as { tagValues?: string[] };
+    return (payload.tagValues ?? []).filter(Boolean).sort();
+  }
+  const res = await globalThis.fetch(`${basePath}/api/services`, { credentials: 'include' });
+  if (res.status === 401) throw new UnauthorizedError('Session expired while loading trace services');
+  if (!res.ok) throw new Error(`Jaeger services HTTP ${res.status}: ${await res.text()}`);
+  const payload = (await res.json()) as { data?: string[] };
+  return (payload.data ?? []).filter(Boolean).sort();
+}
+
+export async function fetchTraceOperations(target: DatasourceTarget, service: string): Promise<string[]> {
+  if (!service || target.pluginKind === 'TempoDatasource') return [];
+  const basePath = buildProxyBasePath(target);
+  const res = await globalThis.fetch(`${basePath}/api/services/${encodeURIComponent(service)}/operations`, {
+    credentials: 'include',
+  });
+  if (res.status === 401) throw new UnauthorizedError('Session expired while loading trace operations');
+  if (!res.ok) return [];
+  const payload = (await res.json()) as { data?: string[] };
+  return (payload.data ?? []).filter(Boolean).sort();
+}
+
+export async function searchTraces(
+  target: DatasourceTarget,
+  params: {
+    service?: string;
+    operation?: string;
+    startIso: string;
+    endIso: string;
+    minDuration?: string;
+    maxDuration?: string;
+    tags?: string;
+    limit?: number;
+  },
+): Promise<TraceDetail[]> {
+  const basePath = buildProxyBasePath(target);
+  if (target.pluginKind === 'TempoDatasource') {
+    const qs = new URLSearchParams({
+      start: String(Math.floor(new Date(params.startIso).getTime() / 1000)),
+      end: String(Math.floor(new Date(params.endIso).getTime() / 1000)),
+      limit: String(params.limit ?? 20),
+    });
+    if (params.minDuration?.trim()) qs.set('minDuration', params.minDuration.trim());
+    if (params.maxDuration?.trim()) qs.set('maxDuration', params.maxDuration.trim());
+    if (params.service) qs.set('tags', `service.name="${params.service}"`);
+    const res = await globalThis.fetch(`${basePath}/api/search?${qs.toString()}`, { credentials: 'include' });
+    if (res.status === 401) throw new UnauthorizedError('Session expired while searching Tempo traces');
+    if (!res.ok) throw new Error(`Tempo search HTTP ${res.status}: ${await res.text()}`);
+    const payload = (await res.json()) as {
+      traces?: Array<{
+        traceID?: string;
+        rootServiceName?: string;
+        rootTraceName?: string;
+        startTimeUnixNano?: string;
+        durationMs?: number;
+      }>;
+    };
+    return (payload.traces ?? []).map((t) => ({
+      traceId: String(t.traceID ?? ''),
+      rootService: String(t.rootServiceName ?? 'unknown'),
+      rootOperation: String(t.rootTraceName ?? 'unknown'),
+      startTimeUs: Math.floor(Number(t.startTimeUnixNano ?? 0) / 1000),
+      durationUs: Math.max(0, Number(t.durationMs ?? 0) * 1000),
+      spanCount: 1,
+      errorCount: 0,
+      services: [String(t.rootServiceName ?? 'unknown')],
+      spans: [],
+    }));
+  }
+
+  const qs = buildJaegerSearchParams(params);
+  const res = await globalThis.fetch(`${basePath}/api/traces?${qs.toString()}`, { credentials: 'include' });
+  if (res.status === 401) throw new UnauthorizedError('Session expired while searching Jaeger traces');
+  if (!res.ok) throw new Error(`Jaeger search HTTP ${res.status}: ${await res.text()}`);
+  const payload = (await res.json()) as { data?: RawJaegerTrace[] };
+  return (payload.data ?? []).map(normalizeJaegerTrace).sort((a, b) => b.startTimeUs - a.startTimeUs);
+}
+
+export async function fetchTraceById(target: DatasourceTarget, traceId: string): Promise<TraceDetail> {
+  const basePath = buildProxyBasePath(target);
+  const res = await globalThis.fetch(`${basePath}/api/traces/${encodeURIComponent(traceId)}`, {
+    credentials: 'include',
+  });
+  if (res.status === 401) throw new UnauthorizedError('Session expired while loading trace detail');
+  if (!res.ok) throw new Error(`Trace fetch HTTP ${res.status}: ${await res.text()}`);
+  const payload = (await res.json()) as { data?: RawJaegerTrace[] };
+  const first = payload.data?.[0];
+  if (!first) {
+    throw new Error(`Trace "${traceId}" not found.`);
+  }
+  return normalizeJaegerTrace(first);
 }

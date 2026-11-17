@@ -54,6 +54,7 @@ import { ExploreView } from './components/ExploreView';
 import { HostsView } from './components/HostsView';
 import { LoginView } from './components/LoginView';
 import { LogsExplorerView } from './components/LogsExplorerView';
+import { TracesExplorerView } from './components/TracesExplorerView';
 import { RolesView, SiteSettingsView, SystemAboutView, UsersView } from './components/UsersView';
 import type { ThemeMode } from './theme/persesTheme';
 import { PALETTE_TOKENS } from './theme/persesTheme';
@@ -61,6 +62,7 @@ import { PALETTE_TOKENS } from './theme/persesTheme';
 type NavKey =
   | 'metrics'
   | 'logs'
+  | 'traces'
   | 'dashboards'
   | 'alerts'
   | 'events'
@@ -90,6 +92,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { key: 'metrics', label: 'Metrics', path: '/explore/metrics' },
       { key: 'logs', label: 'Logs', path: '/explore/logs' },
+      { key: 'traces', label: 'Traces', path: '/explore/traces' },
       { key: 'dashboards', label: 'Dashboards', path: '/dashboards' },
     ],
   },
@@ -137,6 +140,7 @@ const NAV_SECTIONS: NavSection[] = [
 const ROUTE_TITLES: Record<NavKey, string> = {
   metrics: 'Metrics explorer',
   logs: 'Log explorer',
+  traces: 'Traces explorer',
   dashboards: 'Dashboards',
   alerts: 'Alert rules',
   events: 'Kubernetes Events',
@@ -150,6 +154,7 @@ const ROUTE_TITLES: Record<NavKey, string> = {
 
 function navKeyFromPath(pathname: string): NavKey {
   if (pathname.startsWith('/explore/logs')) return 'logs';
+  if (pathname.startsWith('/explore/traces')) return 'traces';
   if (pathname.startsWith('/explore')) return 'metrics';
   if (pathname.startsWith('/alerts')) return 'alerts';
   if (pathname.startsWith('/events')) return 'events';
@@ -671,6 +676,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
           )}
           {activeKey === 'metrics' && <ExploreView />}
           {activeKey === 'logs' && <LogsExplorerView />}
+          {activeKey === 'traces' && <TracesExplorerView />}
           {activeKey === 'hosts' && <HostsView />}
           {activeKey === 'alerts' && <AlertRulesView defaultSubTab="rules" />}
           {activeKey === 'events' && <AlertRulesView defaultSubTab="events" />}

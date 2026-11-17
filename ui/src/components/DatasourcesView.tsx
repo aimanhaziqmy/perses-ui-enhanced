@@ -725,10 +725,11 @@ export function DatasourcesView() {
                   >
                     <MenuItem value="PrometheusDatasource">Prometheus / VictoriaMetrics (PrometheusDatasource)</MenuItem>
                     <MenuItem value="VictoriaLogsDatasource">VictoriaLogs (VictoriaLogsDatasource)</MenuItem>
+                    <MenuItem value="JaegerDatasource">Jaeger / VictoriaTraces (JaegerDatasource)</MenuItem>
                     <MenuItem value="TempoDatasource">Tempo Traces (TempoDatasource)</MenuItem>
-                    {!['PrometheusDatasource', 'VictoriaLogsDatasource', 'TempoDatasource'].includes(form.pluginKind) && (
-                      <MenuItem value={form.pluginKind}>{form.pluginKind}</MenuItem>
-                    )}
+                    {!['PrometheusDatasource', 'VictoriaLogsDatasource', 'JaegerDatasource', 'TempoDatasource'].includes(
+                      form.pluginKind,
+                    ) && <MenuItem value={form.pluginKind}>{form.pluginKind}</MenuItem>}
                   </Select>
                 </FormControl>
 
@@ -753,7 +754,11 @@ export function DatasourcesView() {
                 placeholder={
                   form.pluginKind === 'VictoriaLogsDatasource'
                     ? 'http://vl-victoria-logs-single-server:9428'
-                    : 'http://victoria-metrics:8428'
+                    : form.pluginKind === 'JaegerDatasource'
+                      ? 'http://jaeger-query:16686'
+                      : form.pluginKind === 'TempoDatasource'
+                        ? 'http://tempo:3200'
+                        : 'http://victoria-metrics:8428'
                 }
                 value={form.url}
                 onChange={(e) => setForm((prev) => ({ ...prev, url: e.target.value }))}
