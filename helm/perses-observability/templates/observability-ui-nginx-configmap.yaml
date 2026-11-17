@@ -9,6 +9,17 @@ metadata:
     {{- include "perses-observability.labels" . | nindent 4 }}
 data:
   default.conf: |
+    map $request_method $is_perses_mutation {
+      default 0;
+      POST    1;
+      PUT     1;
+      PATCH   1;
+      DELETE  1;
+    }
+
+    log_format perses_audit escape=json
+      '{"audit_type":"perses_api","timestamp":"$time_iso8601","method":"$request_method","uri":"$request_uri","status":$status,"remote_addr":"$remote_addr","x_forwarded_for":"$http_x_forwarded_for","user_agent":"$http_user_agent","request_time":$request_time}';
+
     server {
       listen 8080;
       server_name _;
@@ -22,7 +33,21 @@ data:
         return 200 "ok\n";
       }
 
+      location = /workspace-map.json {
+        default_type application/json;
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
+        root /tmp;
+        try_files /workspace-map.json @workspace_disabled;
+      }
+
+      location @workspace_disabled {
+        default_type application/json;
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
+        return 200 '{"enabled":false,"data":{"items":[]}}\n';
+      }
+
       location /api/ {
+        access_log /dev/stdout perses_audit if=$is_perses_mutation;
         proxy_pass http://{{ $persesSvc }};
         proxy_http_version 1.1;
         proxy_set_header Host $http_host;

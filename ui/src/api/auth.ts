@@ -71,7 +71,7 @@ function decodeBase64UrlJson(segment: string): Record<string, unknown> | null {
   }
 }
 
-export function getCurrentPersesUsername(): string {
+export function getCurrentPersesUserClaims(): { username: string; sub: string } {
   if (typeof document !== 'undefined') {
     try {
       const cookies = document.cookie.split(';').map((c) => c.trim());
@@ -81,9 +81,14 @@ export function getCurrentPersesUsername(): string {
         const parts = raw.split('.');
         const candidate = parts.length >= 2 ? parts[1] : parts[0];
         const decoded = decodeBase64UrlJson(candidate);
-        const sub = decoded?.sub ?? decoded?.preferred_username ?? decoded?.username ?? decoded?.name;
-        if (typeof sub === 'string' && sub.trim()) {
-          return sub.trim();
+        const subRaw = typeof decoded?.sub === 'string' ? decoded.sub.trim() : '';
+        const usernameRaw =
+          (typeof decoded?.preferred_username === 'string' && decoded.preferred_username.trim()) ||
+          (typeof decoded?.username === 'string' && decoded.username.trim()) ||
+          (typeof decoded?.name === 'string' && decoded.name.trim()) ||
+          subRaw;
+        if (usernameRaw) {
+          return { username: usernameRaw, sub: subRaw || usernameRaw };
         }
       }
     } catch {
@@ -93,12 +98,17 @@ export function getCurrentPersesUsername(): string {
   try {
     const stored = window.sessionStorage.getItem(CURRENT_USER_STORAGE_KEY);
     if (stored && stored.trim()) {
-      return stored.trim();
+      const s = stored.trim();
+      return { username: s, sub: s };
     }
   } catch {
     // Ignore storage read errors
   }
-  return 'guest';
+  return { username: 'guest', sub: '' };
+}
+
+export function getCurrentPersesUsername(): string {
+  return getCurrentPersesUserClaims().username;
 }
 
 export function fetchPersesHealth(): Promise<PersesHealthResponse> {

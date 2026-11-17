@@ -1,0 +1,41 @@
+{{- $ws := .Values.observabilityUi.workspaceIsolation | default dict -}}
+{{- if and .Values.observabilityUi.enabled $ws.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: perses-ui-workspace-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-perses-ui-workspace-reader
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  {{- if $ws.workspaceApiGroup }}
+  - apiGroups: [{{ $ws.workspaceApiGroup | quote }}]
+    resources: [{{ default "workspaces" $ws.workspaceResource | quote }}]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-perses-ui-workspace-reader
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-perses-ui-workspace-reader
+subjects:
+  - kind: ServiceAccount
+    name: perses-ui-workspace-reader
+    namespace: {{ .Release.Namespace }}
+{{- end }}

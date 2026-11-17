@@ -320,9 +320,8 @@ perses:
         guest_permissions:
           - actions: ["read"]
             scopes: ["GlobalVariable"]
-          # Uncomment to grant all authenticated/OIDC users read-only Viewer access (Dashboards + Explorers) automatically:
-          # - actions: ["read"]
-          #   scopes: ["Project", "Dashboard", "Datasource", "GlobalDatasource", "Variable"]
+          - actions: ["read"]
+            scopes: ["Project", "Dashboard", "Datasource", "GlobalDatasource", "Variable"]
     frontend:
       explorer:
         enable: true
@@ -374,6 +373,13 @@ observabilityUi:
     gatewayName: external
     gatewayNamespace: gateway-system
     tlsSecretName: perses-ui-tls
+  # Optional Kubernetes workspace/namespace discovery & query pre-filtering (false for Docker/bare-host)
+  workspaceIsolation:
+    enabled: false
+    syncIntervalSeconds: 30
+    workspaceApiGroup: ""
+    workspaceResource: "namespaces"
+    workspaceApiPath: "/api/v1/namespaces"
 
 # ------------------------------------------------------------------------------
 # 10. Optional Jaeger v2 Trace Backend (Apache 2.0, disabled by default)

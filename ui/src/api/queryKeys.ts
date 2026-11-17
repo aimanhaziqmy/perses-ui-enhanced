@@ -21,4 +21,5 @@ export const queryKeys = {
   logPresetsConfig: ['perses', 'log-presets-config'] as const,
   traceServices: (targetKey: string) => ['perses', 'trace-services', targetKey] as const,
   traceOperations: (targetKey: string, service: string) => ['perses', 'trace-operations', targetKey, service] as const,
+  workspaceMap: ['perses', 'workspace-map'] as const,
 };

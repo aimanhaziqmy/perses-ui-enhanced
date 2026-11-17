@@ -9,3 +9,4 @@ export * from './alerts';
 export * from './branding';
 export * from './traces';
 export * from './queryKeys';
+export * from './workspace';

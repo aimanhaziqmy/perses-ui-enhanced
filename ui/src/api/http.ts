@@ -1,6 +1,8 @@
 import type { GlobalVariableResource } from '@perses-dev/client';
 import { buildProxyUrl } from '@perses-dev/client';
 
+import { rewriteProxyRequestForNamespaces } from './workspace';
+
 export class UnauthorizedError extends Error {
   readonly status = 401;
   constructor(message = 'Authentication required') {
@@ -37,13 +39,19 @@ export async function refreshAuthSession(): Promise<boolean> {
 }
 
 export async function persesFetchFn(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-  const retryRequest = input instanceof Request ? input.clone() : null;
-  const res = await nativeFetch(input, init);
+  const { input: scopedInput, init: scopedInit } = rewriteProxyRequestForNamespaces(input, init);
+  const urlStr =
+    typeof scopedInput === 'string'
+      ? scopedInput
+      : scopedInput instanceof URL
+        ? scopedInput.toString()
+        : scopedInput.url;
+  const retryRequest = scopedInput instanceof Request ? scopedInput.clone() : null;
+  const res = await nativeFetch(scopedInput, scopedInit);
   if (res.status === 401 && !urlStr.includes('/api/auth/')) {
     const refreshed = await refreshAuthSession();
     if (refreshed) {
-      return nativeFetch(retryRequest ?? input, init);
+      return nativeFetch(retryRequest ?? scopedInput, scopedInit);
     }
   }
   return res;

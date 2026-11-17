@@ -1,9 +1,13 @@
 import {
+  Alert,
   Box,
   Button,
   Chip,
   Drawer,
+  FormControl,
   IconButton,
+  MenuItem,
+  Select,
   Stack,
   Tooltip,
   Typography,
@@ -18,6 +22,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import {
   type SiteBrandingConfig,
   ForbiddenError,
+  NO_WORKSPACE_SENTINEL,
   UnauthorizedError,
   applySiteBrandingToDocument,
   fetchClusterSiteBranding,
@@ -25,12 +30,16 @@ import {
   fetchPersesHealth,
   fetchProjects,
   fetchUserPermissions,
+  fetchWorkspaceMap,
+  getCurrentPersesUserClaims,
   getCurrentPersesUsername,
   getLocalSiteBranding,
   getUiCapabilities,
   logoutPerses,
   queryKeys,
+  resolveUserWorkspaces,
   saveClusterSiteBranding,
+  setEnforcedNamespaces,
 } from './api/persesClient';
 import { MoonIcon, SidebarCollapseIcon, SunIcon } from './components/BrandIcons';
 import { LoginView } from './components/LoginView';
@@ -194,6 +203,37 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
   );
   const isSiteAdmin = capabilities.isSiteAdmin;
 
+  const { data: workspaceMap, isLoading: loadingWorkspaceMap } = useQuery({
+    queryKey: queryKeys.workspaceMap,
+    queryFn: fetchWorkspaceMap,
+    enabled: sessionState === 'authenticated',
+    refetchInterval: 30000,
+    retry: false,
+  });
+
+  const userClaims = useMemo(() => getCurrentPersesUserClaims(), [currentUsername, sessionState]);
+  const userWorkspaces = useMemo(
+    () => resolveUserWorkspaces(workspaceMap, currentUsername, userClaims.sub),
+    [workspaceMap, currentUsername, userClaims.sub],
+  );
+  const isNamespaceScoped = Boolean(workspaceMap?.enabled && authEnabled && !isSiteAdmin);
+  const [selectedWorkspaceNs, setSelectedWorkspaceNs] = useState<string>('');
+
+  const activeScopedNamespaces = useMemo<string[] | null>(() => {
+    if (!isNamespaceScoped) return null;
+    if (userWorkspaces.length === 0) return [NO_WORKSPACE_SENTINEL];
+    const allowedSet = new Set(userWorkspaces.map((w) => w.namespace));
+    if (selectedWorkspaceNs === '__all__') {
+      return userWorkspaces.map((w) => w.namespace);
+    }
+    if (selectedWorkspaceNs && allowedSet.has(selectedWorkspaceNs)) {
+      return [selectedWorkspaceNs];
+    }
+    return [userWorkspaces[0].namespace];
+  }, [isNamespaceScoped, userWorkspaces, selectedWorkspaceNs]);
+
+  setEnforcedNamespaces(activeScopedNamespaces);
+
   const workspaceContext = useMemo(() => {
     const urlProject = searchParams.get('project')?.trim() || '';
     const urlNamespace = searchParams.get('namespace')?.trim() || '';
@@ -320,6 +360,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
             currentUsername={currentUsername}
             isSiteAdmin={isSiteAdmin}
             canManageUsers={capabilities.canManageUsers}
+            hideClusterInfra={isNamespaceScoped}
             themeMode={themeMode}
             onNavigate={handleNavigate}
             onToggleCollapse={setSidebarCollapsed}
@@ -338,6 +379,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
             currentUsername={currentUsername}
             isSiteAdmin={isSiteAdmin}
             canManageUsers={capabilities.canManageUsers}
+            hideClusterInfra={isNamespaceScoped}
             themeMode={themeMode}
             onNavigate={handleNavigate}
             onToggleCollapse={setSidebarCollapsed}
@@ -377,6 +419,40 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center">
+              {isNamespaceScoped && userWorkspaces.length === 1 && (
+                <Chip
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                  label={`Workspace: ${userWorkspaces[0].workspaceName} (${userWorkspaces[0].namespace})`}
+                  sx={{ height: 24, fontSize: 11.5, fontFamily: 'monospace' }}
+                />
+              )}
+              {isNamespaceScoped && userWorkspaces.length > 1 && (
+                <FormControl size="small" sx={{ minWidth: 190 }}>
+                  <Select
+                    displayEmpty
+                    value={
+                      selectedWorkspaceNs &&
+                      (selectedWorkspaceNs === '__all__' ||
+                        userWorkspaces.some((w) => w.namespace === selectedWorkspaceNs))
+                        ? selectedWorkspaceNs
+                        : userWorkspaces[0].namespace
+                    }
+                    onChange={(e) => setSelectedWorkspaceNs(e.target.value)}
+                    sx={{ height: 28, fontSize: 12, fontFamily: 'monospace' }}
+                  >
+                    {userWorkspaces.map((w) => (
+                      <MenuItem key={w.namespace} value={w.namespace} sx={{ fontSize: 12, fontFamily: 'monospace' }}>
+                        {w.workspaceName} ({w.namespace})
+                      </MenuItem>
+                    ))}
+                    <MenuItem value="__all__" sx={{ fontSize: 12, fontFamily: 'monospace' }}>
+                      All my workspaces ({userWorkspaces.length})
+                    </MenuItem>
+                  </Select>
+                </FormControl>
+              )}
               {health && (
                 <Tooltip title={`Perses ${health.version ?? 'v0.55.1'} · DB ${health.database ? 'OK' : 'DOWN'}`}>
                   <Chip
@@ -415,6 +491,12 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
         )}
 
         <Box component="main" sx={{ flex: 1, p: isEmbedRoute ? 1 : isFullscreen ? 1.5 : { xs: 1.5, md: 2 }, minHeight: 0 }}>
+          {isNamespaceScoped && !loadingWorkspaceMap && userWorkspaces.length === 0 && (
+            <Alert severity="warning" sx={{ mb: 1.5 }}>
+              No Kubernetes workspace namespace is assigned to account <strong>{currentUsername}</strong> yet. Metrics and
+              logs are restricted until a workspace membership is granted.
+            </Alert>
+          )}
           {isEmbedRoute ? (
             <RouteView>
               <DashboardsView
@@ -480,7 +562,14 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 path="/hosts/*"
                 element={
                   <RouteView>
-                    <HostsView />
+                    {isNamespaceScoped ? (
+                      <ViewForbiddenState
+                        description="Cluster-wide host infrastructure is restricted to site administrators."
+                        onBack={() => navigate('/dashboards')}
+                      />
+                    ) : (
+                      <HostsView />
+                    )}
                   </RouteView>
                 }
               />
@@ -504,7 +593,14 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 path="/datasources/*"
                 element={
                   <RouteView>
-                    <DatasourcesView canManage={capabilities.canManageDatasources} />
+                    {isNamespaceScoped ? (
+                      <ViewForbiddenState
+                        description="Cluster data source endpoints are restricted to site administrators."
+                        onBack={() => navigate('/dashboards')}
+                      />
+                    ) : (
+                      <DatasourcesView canManage={capabilities.canManageDatasources} />
+                    )}
                   </RouteView>
                 }
               />

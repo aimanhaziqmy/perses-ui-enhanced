@@ -22,6 +22,10 @@ spec:
       annotations:
         checksum/nginx-config: {{ include (print $.Template.BasePath "/observability-ui-nginx-configmap.yaml") . | sha256sum }}
     spec:
+      {{- $ws := .Values.observabilityUi.workspaceIsolation | default dict }}
+      {{- if $ws.enabled }}
+      serviceAccountName: perses-ui-workspace-reader
+      {{- end }}
       {{- with .Values.observabilityUi.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -37,6 +41,25 @@ spec:
         - name: observability-ui
           image: "{{ .Values.observabilityUi.image.repository }}:{{ .Values.observabilityUi.image.tag }}"
           imagePullPolicy: {{ .Values.observabilityUi.image.pullPolicy }}
+          {{- if $ws.enabled }}
+          command:
+            - sh
+            - -c
+            - |
+              (while true; do
+                TOKEN_FILE="/var/run/secrets/kubernetes.io/serviceaccount/token"
+                if [ -f "$TOKEN_FILE" ]; then
+                  RAW=$(curl -sk --max-time 5 -H "Authorization: Bearer $(cat "$TOKEN_FILE")" "https://kubernetes.default.svc{{ default "/api/v1/namespaces" $ws.workspaceApiPath }}" 2>/dev/null)
+                  if echo "$RAW" | grep -q '"items"'; then
+                    printf '{"enabled":true,"data":%s}\n' "$RAW" > /tmp/workspace-map.json.tmp && mv /tmp/workspace-map.json.tmp /tmp/workspace-map.json
+                  else
+                    printf '{"enabled":true,"data":{"items":[]}}\n' > /tmp/workspace-map.json.tmp && mv /tmp/workspace-map.json.tmp /tmp/workspace-map.json
+                  fi
+                fi
+                sleep {{ default 30 $ws.syncIntervalSeconds }}
+              done) &
+              exec nginx -g "daemon off;"
+          {{- end }}
           ports:
             - name: http
               containerPort: 8080
