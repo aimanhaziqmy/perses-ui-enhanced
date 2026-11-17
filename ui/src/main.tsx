@@ -22,7 +22,9 @@ import { QueryParamProvider } from 'use-query-params';
 import { ReactRouter6Adapter } from 'use-query-params/adapters/react-router-6';
 
 import { App } from './App';
-import { persesFetchFn } from './api/persesClient';
+import { installGlobalProxyFetchInterceptor, persesFetchFn } from './api/persesClient';
+
+installGlobalProxyFetchInterceptor();
 import type { ThemeMode } from './theme/persesTheme';
 import {
   THEME_STORAGE_KEY,

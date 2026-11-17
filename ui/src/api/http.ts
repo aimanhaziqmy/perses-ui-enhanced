@@ -21,6 +21,16 @@ export class ForbiddenError extends Error {
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 let refreshInFlight: Promise<boolean> | null = null;
+let proxyInterceptorInstalled = false;
+
+export function installGlobalProxyFetchInterceptor(): void {
+  if (proxyInterceptorInstalled || typeof globalThis.fetch !== 'function') return;
+  proxyInterceptorInstalled = true;
+  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    const { input: scopedInput, init: scopedInit } = rewriteProxyRequestForNamespaces(input, init);
+    return nativeFetch(scopedInput, scopedInit);
+  };
+}
 
 export async function refreshAuthSession(): Promise<boolean> {
   if (!refreshInFlight) {

@@ -288,8 +288,11 @@ export function rewriteProxyRequestForNamespaces(
   const path = urlObj.pathname;
 
   const isVictoriaLogs =
+    path.includes('/select/logsql/query_range') ||
     path.includes('/select/logsql/query') ||
     path.includes('/select/logsql/hits') ||
+    path.includes('/select/logsql/stats_query_range') ||
+    path.includes('/select/logsql/stats_query') ||
     path.includes('/select/logsql/field_values') ||
     path.includes('/select/logsql/field_names') ||
     path.includes('/select/logsql/facets');
