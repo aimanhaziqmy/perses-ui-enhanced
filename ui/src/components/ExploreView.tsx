@@ -1,4 +1,4 @@
-import { Alert, Box, Button, FormControl, InputLabel, MenuItem, Select, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, FormControl, InputLabel, MenuItem, Select, Stack } from '@mui/material';
 import type { ProjectResource } from '@perses-dev/client';
 import { ErrorAlert, ErrorBoundary, getResourceDisplayName } from '@perses-dev/components';
 import { ViewExplore } from '@perses-dev/explore';
@@ -23,47 +23,7 @@ export function ExploreView() {
   const datasourceApi = usePersesDatasourceApi(projectName || undefined);
 
   return (
-    <Stack spacing={2} sx={{ height: '100%' }}>
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        spacing={2}
-        alignItems={{ xs: 'stretch', sm: 'center' }}
-        justifyContent="space-between"
-        sx={{
-          p: 2,
-          borderRadius: 2,
-          bgcolor: 'background.paper',
-          border: '1px solid',
-          borderColor: 'divider',
-        }}
-      >
-        <Box>
-          <Typography variant="subtitle1" fontWeight={700}>
-            Unified Metrics &amp; Logs Explorer
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Query any configured metrics (PromQL) or logs (LogsQL) data source directly via Perses Proxy
-          </Typography>
-        </Box>
-
-        <FormControl size="small" sx={{ minWidth: 220 }}>
-          <InputLabel id="explore-project-label">Datasource Scope</InputLabel>
-          <Select
-            labelId="explore-project-label"
-            label="Datasource Scope"
-            value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
-          >
-            <MenuItem value="">Global Datasources</MenuItem>
-            {(projects ?? []).map((p) => (
-              <MenuItem key={p.metadata.name} value={p.metadata.name}>
-                {getResourceDisplayName(p)}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Stack>
-
+    <Stack spacing={1.5} sx={{ height: '100%' }}>
       {projectsError && <Alert severity="error">Failed to load project scopes: {projectsError.message}</Alert>}
 
       {!loadingDatasources && allDatasources.length === 0 ? (
@@ -84,7 +44,36 @@ export function ExploreView() {
             <PluginRegistry pluginLoader={pluginLoader}>
               <ValidationProvider>
                 <ErrorBoundary FallbackComponent={ErrorAlert}>
-                  <ViewExplore datasourceApi={datasourceApi} projectName={projectName || undefined} />
+                  <ViewExplore
+                    datasourceApi={datasourceApi}
+                    projectName={projectName || undefined}
+                    exploreTitleComponent={
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                        <FormControl size="small" sx={{ minWidth: 190 }}>
+                          <InputLabel id="explore-project-label">Datasource Scope</InputLabel>
+                          <Select
+                            labelId="explore-project-label"
+                            label="Datasource Scope"
+                            value={projectName}
+                            onChange={(e) => setProjectName(e.target.value)}
+                          >
+                            <MenuItem value="">Global Datasources</MenuItem>
+                            {(projects ?? []).map((p) => (
+                              <MenuItem key={p.metadata.name} value={p.metadata.name}>
+                                {getResourceDisplayName(p)}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label="PromQL · LogsQL"
+                          sx={{ height: 24, fontSize: 11, fontFamily: 'monospace' }}
+                        />
+                      </Stack>
+                    }
+                  />
                 </ErrorBoundary>
               </ValidationProvider>
             </PluginRegistry>
