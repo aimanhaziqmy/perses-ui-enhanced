@@ -110,7 +110,7 @@ data:
         "spec": {
           "default": true,
           "display": {
-            "name": "VictoriaMetrics (Cluster & GPU Metrics)"
+            "name": "VictoriaMetrics"
           },
           "plugin": {
             "kind": "PrometheusDatasource",
@@ -133,7 +133,7 @@ data:
         "spec": {
           "default": true,
           "display": {
-            "name": "VictoriaLogs (Cluster, Host & AI Inference Logs)"
+            "name": "VictoriaLogs"
           },
           "plugin": {
             "kind": "VictoriaLogsDatasource",

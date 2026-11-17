@@ -55,14 +55,13 @@ import Refresh from 'mdi-material-ui/Refresh';
 import ShareVariantOutline from 'mdi-material-ui/ShareVariantOutline';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 
 import {
   ForbiddenError,
   countUnsupportedMigratedQueries,
   createDashboard,
   createProject,
-  datasourceTargetKey,
   deleteDashboard,
   deleteProject,
   fetchDashboard,
@@ -72,7 +71,6 @@ import {
   migrateGrafanaDashboard,
   unwrapGrafanaDashboard,
   updateDashboard,
-  useDatasourceTargets,
   usePersesDatasourceApi,
 } from '../api/persesClient';
 import { PALETTE_TOKENS } from '../theme/persesTheme';
@@ -89,7 +87,6 @@ export function DashboardsView({
   const muiTheme = useTheme();
   const tokens = PALETTE_TOKENS[muiTheme.palette.mode];
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const location = useLocation();
 
   const embedMatch = location.pathname.match(/^\/embed\/projects\/([^/]+)\/dashboards\/([^/]+)/);
@@ -159,8 +156,6 @@ export function DashboardsView({
     queryFn: fetchProjects,
     enabled: !isEmbed,
   });
-
-  const { targets: availableDatasources } = useDatasourceTargets();
 
   useEffect(() => {
     if (isEmbed) return;
@@ -275,12 +270,6 @@ export function DashboardsView({
   };
 
   const datasourceApi = usePersesDatasourceApi(selectedProject || undefined);
-
-  const scopedDatasourceChips = useMemo(() => {
-    return availableDatasources
-      .filter((t) => t.scope === 'global' || t.project === selectedProject)
-      .slice(0, 4);
-  }, [availableDatasources, selectedProject]);
 
   const handleSaveDashboard = async (updated: DashboardResource) => {
     setFeedback(null);
@@ -1053,219 +1042,6 @@ export function DashboardsView({
         </Card>
       ) : (
         <>
-          {/* Project & Dashboard Directory Bar (hidden in embed, minimal in fullscreen, compact in View mode) */}
-          {!isEmbed && isFullscreen && (
-            <Box
-              sx={{
-                px: 1.5,
-                py: 0.75,
-                borderRadius: 1.5,
-                bgcolor: tokens.bgSurface,
-                border: `1px solid ${tokens.borderSubtle}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 1,
-              }}
-            >
-              <Typography variant="body2" fontWeight={700} noWrap>
-                {activeDashboard ? getResourceDisplayName(activeDashboard) : selectedDashboardName}
-              </Typography>
-              {onToggleFullscreen && (
-                <Button size="small" variant="outlined" startIcon={<FullscreenExit />} onClick={onToggleFullscreen}>
-                  Exit Fullscreen (Esc)
-                </Button>
-              )}
-            </Box>
-          )}
-
-          {!isEmbed && !isFullscreen && (
-            <Box
-              sx={{
-                px: 1.5,
-                py: startInEditMode ? 1.25 : 0.75,
-                borderRadius: 1.5,
-                bgcolor: tokens.bgSurface,
-                border: `1px solid ${tokens.borderSubtle}`,
-                display: 'flex',
-                flexDirection: { xs: 'column', lg: 'row' },
-                gap: 1,
-                alignItems: { xs: 'stretch', lg: 'center' },
-                justifyContent: 'space-between',
-              }}
-            >
-              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Button
-                  size="small"
-                  variant="text"
-                  startIcon={<ArrowLeft />}
-                  onClick={() => {
-                    setStartInEditMode(false);
-                    setViewMode('list');
-                  }}
-                >
-                  All Dashboards
-                </Button>
-                <Typography variant="body2" color="text.secondary">
-                  /
-                </Typography>
-                <FormControl size="small" sx={{ minWidth: startInEditMode ? 170 : 145 }} disabled={!projects || projects.length === 0}>
-                  <InputLabel id="project-select-label">Project</InputLabel>
-                  <Select
-                    labelId="project-select-label"
-                    label="Project"
-                    value={selectedProject}
-                    onChange={(e) => {
-                      setSelectedProject(e.target.value);
-                      setSelectedDashboardName('');
-                      setStartInEditMode(false);
-                    }}
-                  >
-                    {(projects ?? []).map((p) => (
-                      <MenuItem key={p.metadata.name} value={p.metadata.name}>
-                        {getResourceDisplayName(p)}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-
-                {startInEditMode && (
-                  <>
-                    <Tooltip title="New project">
-                      <IconButton
-                        size="small"
-                        color="primary"
-                        onClick={() => {
-                          setProjError(null);
-                          setCreateProjOpen(true);
-                        }}
-                        sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
-                      >
-                        <FolderPlusOutline fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    {selectedProject && (
-                      <Tooltip title={`Delete project "${selectedProject}"`}>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => setDeleteProjOpen(true)}
-                          sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
-                        >
-                          <DeleteOutline fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </>
-                )}
-
-                <Typography variant="body2" color="text.secondary">
-                  /
-                </Typography>
-                <FormControl size="small" sx={{ minWidth: startInEditMode ? 220 : 190 }} disabled={!dashboards || dashboards.length === 0}>
-                  <InputLabel id="dashboard-select-label">Dashboard</InputLabel>
-                  <Select
-                    labelId="dashboard-select-label"
-                    label="Dashboard"
-                    value={selectedDashboardName}
-                    onChange={(e) => {
-                      setSelectedDashboardName(e.target.value);
-                      setStartInEditMode(false);
-                    }}
-                  >
-                    {(dashboards ?? []).map((d) => (
-                      <MenuItem key={d.metadata.name} value={d.metadata.name}>
-                        {getResourceDisplayName(d)}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-
-                {startInEditMode && (
-                  <>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      startIcon={<Plus />}
-                      disabled={!selectedProject}
-                      onClick={openCreateDashboardModal}
-                    >
-                      New dashboard
-                    </Button>
-                    {selectedDashboardName && (
-                      <Tooltip title={`Delete dashboard "${selectedDashboardName}"`}>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => setDeleteDashOpen(true)}
-                          sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
-                        >
-                          <DeleteOutline fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </>
-                )}
-              </Stack>
-
-              <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
-                {startInEditMode &&
-                  (scopedDatasourceChips.length === 0 ? (
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      color="warning"
-                      label="No data sources · Add one"
-                      onClick={() => navigate('/datasources')}
-                      sx={{ fontSize: 11.5, cursor: 'pointer' }}
-                    />
-                  ) : (
-                    scopedDatasourceChips.map((ds) => (
-                      <Chip
-                        key={datasourceTargetKey(ds)}
-                        size="small"
-                        variant="outlined"
-                        label={`${ds.pluginKind.replace('Datasource', '')} | ${ds.name}`}
-                        sx={{ fontFamily: 'monospace', fontSize: 11.5 }}
-                      />
-                    ))
-                  ))}
-                {activeDashboard && (
-                  <Tooltip title="Share / Embed iframe">
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<ShareVariantOutline fontSize="small" />}
-                      onClick={() => openShareModal(selectedProject, activeDashboard)}
-                    >
-                      Share
-                    </Button>
-                  </Tooltip>
-                )}
-                {onToggleFullscreen && (
-                  <Tooltip title="Fullscreen dashboard">
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<Fullscreen fontSize="small" />}
-                      onClick={onToggleFullscreen}
-                    >
-                      Fullscreen
-                    </Button>
-                  </Tooltip>
-                )}
-                <Button
-                  size="small"
-                  variant={startInEditMode ? 'contained' : 'outlined'}
-                  startIcon={<PencilOutline fontSize="small" />}
-                  onClick={() => setStartInEditMode((prev) => !prev)}
-                >
-                  {startInEditMode ? 'Done Managing' : 'Manage'}
-                </Button>
-              </Stack>
-            </Box>
-          )}
-
       {!isEmbed && (!projects || projects.length === 0) && (
         <Card>
           <CardContent sx={{ py: 6, textAlign: 'center' }}>
@@ -1342,6 +1118,48 @@ export function DashboardsView({
                     key={`${displayedDashboard.metadata.project}/${displayedDashboard.metadata.name}/${embedPanelKey}`}
                     dashboardResource={displayedDashboard}
                     datasourceApi={datasourceApi}
+                    dashboardTitleComponent={
+                      isEmbed ? undefined : (
+                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                          {!isFullscreen && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<ArrowLeft />}
+                              onClick={() => {
+                                setStartInEditMode(false);
+                                setViewMode('list');
+                              }}
+                            >
+                              All Dashboards
+                            </Button>
+                          )}
+                          <Typography variant="subtitle1" fontWeight={700} noWrap>
+                            {selectedProject} / {getResourceDisplayName(displayedDashboard)}
+                          </Typography>
+                          {!isFullscreen && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<ShareVariantOutline fontSize="small" />}
+                              onClick={() => openShareModal(selectedProject, displayedDashboard)}
+                            >
+                              Share
+                            </Button>
+                          )}
+                          {onToggleFullscreen && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={isFullscreen ? <FullscreenExit fontSize="small" /> : <Fullscreen fontSize="small" />}
+                              onClick={onToggleFullscreen}
+                            >
+                              {isFullscreen ? 'Exit Fullscreen (Esc)' : 'Fullscreen'}
+                            </Button>
+                          )}
+                        </Stack>
+                      )
+                    }
                     isInitialVariableSticky={!isEmbed}
                     isAnnotationEnabled={!isEmbed}
                     isReadonly={isEmbed}
