@@ -4,8 +4,6 @@ import Check from 'mdi-material-ui/Check';
 import ContentCopy from 'mdi-material-ui/ContentCopy';
 import { useMemo, useState } from 'react';
 
-import { PALETTE_TOKENS } from '../theme/persesTheme';
-
 type TokenKind = 'key' | 'string' | 'number' | 'boolean' | 'null' | 'punct' | 'plain';
 
 interface JsonToken {
@@ -151,7 +149,6 @@ export function JsonViewer({
 }: JsonViewerProps) {
   const muiTheme = useTheme();
   const mode = muiTheme.palette.mode;
-  const tokens = PALETTE_TOKENS[mode];
   const colors = SYNTAX_COLORS[mode];
 
   const [wrapLines, setWrapLines] = useState<boolean>(defaultWrap);
@@ -223,8 +220,8 @@ export function JsonViewer({
                 px: 1,
                 py: 0.25,
                 fontSize: 11,
-                color: wrapLines ? tokens.primary : tokens.textSecondary,
-                bgcolor: wrapLines ? tokens.bgActiveNav : 'transparent',
+                color: wrapLines ? 'primary.main' : 'text.secondary',
+                bgcolor: wrapLines ? muiTheme.palette.surface.bgActiveNav : 'transparent',
               }}
             >
               {wrapLines ? 'Wrap: On' : 'Wrap: Off'}

@@ -3,7 +3,6 @@ import {
   Box,
   Button,
   Card,
-  CardContent,
   Checkbox,
   Chip,
   CircularProgress,
@@ -20,88 +19,49 @@ import {
   OutlinedInput,
   Select,
   Stack,
-  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Tabs,
   TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import type { ProjectResource, RoleBindingResource, RoleResource } from '@perses-dev/client';
-import { getResourceDisplayName } from '@perses-dev/components';
+import type {
+  GlobalRoleBindingResource,
+  GlobalRoleResource,
+  Permission,
+  ProjectResource,
+  RoleBindingResource,
+  RoleResource,
+  UserResource,
+} from '@perses-dev/client';
 import DeleteOutline from 'mdi-material-ui/DeleteOutline';
 import PencilOutline from 'mdi-material-ui/PencilOutline';
 import Plus from 'mdi-material-ui/Plus';
 import ShieldAccount from 'mdi-material-ui/ShieldAccount';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
-import { SsoSettingsCard } from './SsoSettingsCard';
-import type {
-  PersesFrontendConfig,
-  PersesGlobalRoleBindingResource,
-  PersesGlobalRoleResource,
-  PersesHealthResponse,
-  PersesPermission,
-  PersesPluginModuleResource,
-  PersesUserResource,
-  SiteBrandingConfig,
-} from '../api/persesClient';
 import {
-  DEFAULT_SITE_BRANDING,
   ForbiddenError,
   assignUserGlobalRoles,
   assignUserProjectRoles,
-  createPersesGlobalRole,
   createPersesUser,
   createProjectRole,
-  deletePersesGlobalRole,
   deletePersesUser,
-  deleteProjectRole,
   fetchPersesGlobalRoleBindings,
   fetchPersesGlobalRoles,
-  fetchPersesPlugins,
   fetchPersesUsers,
   fetchProjectRoleBindings,
   fetchProjectRoles,
   fetchProjects,
   getCurrentPersesUsername,
-  updatePersesGlobalRole,
   updatePersesUser,
-  updateProjectRole,
 } from '../api/persesClient';
-import { PALETTE_TOKENS } from '../theme/persesTheme';
-import { PersesLogoMark } from './BrandIcons';
-
-const ALL_ACTIONS = ['*', 'create', 'read', 'update', 'delete'];
-const ALL_PROJECT_SCOPES = [
-  '*',
-  'Dashboard',
-  'Datasource',
-  'EphemeralDashboard',
-  'Folder',
-  'Project',
-  'Role',
-  'RoleBinding',
-  'Secret',
-  'Variable',
-];
-const ALL_GLOBAL_SCOPES = [
-  '*',
-  ...ALL_PROJECT_SCOPES.filter((s) => s !== '*'),
-  'GlobalDatasource',
-  'GlobalRole',
-  'GlobalRoleBinding',
-  'GlobalSecret',
-  'GlobalVariable',
-  'User',
-];
 
 function formatIso(ts?: string): string {
   if (!ts) return '-';
@@ -123,8 +83,6 @@ interface UserFormState {
 
 export function UsersView() {
   const muiTheme = useTheme();
-  const mode = muiTheme.palette.mode;
-  const tokens = PALETTE_TOKENS[mode];
   const queryClient = useQueryClient();
   const currentUsername = getCurrentPersesUsername();
 
@@ -143,20 +101,20 @@ export function UsersView() {
   });
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<PersesUserResource | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<UserResource | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const { data: users = [], isLoading, error } = useQuery<PersesUserResource[], Error>({
+  const { data: users = [], isLoading, error } = useQuery<UserResource[], Error>({
     queryKey: ['perses', 'users'],
     queryFn: fetchPersesUsers,
   });
 
-  const { data: globalRoles = [] } = useQuery<PersesGlobalRoleResource[], Error>({
+  const { data: globalRoles = [] } = useQuery<GlobalRoleResource[], Error>({
     queryKey: ['perses', 'globalroles'],
     queryFn: fetchPersesGlobalRoles,
   });
 
-  const { data: globalBindings = [] } = useQuery<PersesGlobalRoleBindingResource[], Error>({
+  const { data: globalBindings = [] } = useQuery<GlobalRoleBindingResource[], Error>({
     queryKey: ['perses', 'globalrolebindings'],
     queryFn: fetchPersesGlobalRoleBindings,
   });
@@ -246,7 +204,7 @@ export function UsersView() {
     setFormOpen(true);
   };
 
-  const openEditUser = (user: PersesUserResource) => {
+  const openEditUser = (user: UserResource) => {
     setFormError(null);
     const isOAuth = Boolean(user.spec?.oauthProviders && user.spec.oauthProviders.length > 0);
     const existingGlobal = globalRoleMap.get(user.metadata.name) ?? [];
@@ -267,7 +225,7 @@ export function UsersView() {
   const handleSeedProjectRoles = async (project: string) => {
     setFormError(null);
     try {
-      const defaults: Array<{ name: string; permissions: PersesPermission[] }> = [
+      const defaults: Array<{ name: string; permissions: Permission[] }> = [
         { name: 'admin', permissions: [{ actions: ['*'], scopes: ['*'] }] },
         {
           name: 'editor',
@@ -336,7 +294,7 @@ export function UsersView() {
         await queryClient.invalidateQueries({ queryKey: ['perses', 'users'] });
       } else {
         const existingUser = users.find((u) => u.metadata.name === username);
-        const nextSpec: PersesUserResource['spec'] = {
+        const nextSpec: UserResource['spec'] = {
           ...(existingUser?.spec ?? {}),
           firstName: form.firstName.trim() || undefined,
           lastName: form.lastName.trim() || undefined,
@@ -437,7 +395,7 @@ export function UsersView() {
         <Box
           sx={{
             p: 1.75,
-            borderBottom: `1px solid ${tokens.borderSubtle}`,
+            borderBottom: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
             display: 'flex',
             flexWrap: 'wrap',
             gap: 1.5,
@@ -733,772 +691,3 @@ export function UsersView() {
   );
 }
 
-interface RoleFormState {
-  mode: 'create' | 'edit';
-  scope: 'global' | 'project';
-  project: string;
-  name: string;
-  permissions: PersesPermission[];
-}
-
-export function RolesView() {
-  const muiTheme = useTheme();
-  const tokens = PALETTE_TOKENS[muiTheme.palette.mode];
-  const queryClient = useQueryClient();
-
-  const [tab, setTab] = useState<'global' | 'project'>('global');
-  const [selectedProject, setSelectedProject] = useState<string>('');
-  const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState<RoleFormState>({
-    mode: 'create',
-    scope: 'global',
-    project: '',
-    name: '',
-    permissions: [{ actions: ['read'], scopes: ['Dashboard'] }],
-  });
-  const [formError, setFormError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ scope: 'global' | 'project'; project?: string; name: string } | null>(
-    null,
-  );
-  const [deleting, setDeleting] = useState(false);
-
-  const {
-    data: globalRoles = [],
-    isLoading: loadingGlobal,
-    error: globalError,
-  } = useQuery<PersesGlobalRoleResource[], Error>({
-    queryKey: ['perses', 'globalroles'],
-    queryFn: fetchPersesGlobalRoles,
-  });
-
-  const { data: projects = [] } = useQuery<ProjectResource[], Error>({
-    queryKey: ['perses', 'projects'],
-    queryFn: fetchProjects,
-  });
-
-  useEffect(() => {
-    if (projects.length > 0 && (!selectedProject || !projects.some((p) => p.metadata.name === selectedProject))) {
-      setSelectedProject(projects[0].metadata.name);
-    }
-  }, [projects, selectedProject]);
-
-  const {
-    data: projectRoles = [],
-    isInitialLoading: loadingProject,
-    error: projectError,
-  } = useQuery<RoleResource[], Error>({
-    queryKey: ['perses', 'projectroles', selectedProject],
-    queryFn: () => fetchProjectRoles(selectedProject),
-    enabled: Boolean(selectedProject) && tab === 'project',
-  });
-
-  const openCreateRole = () => {
-    setFormError(null);
-    setForm({
-      mode: 'create',
-      scope: tab,
-      project: selectedProject || projects[0]?.metadata.name || '',
-      name: '',
-      permissions: [{ actions: ['read'], scopes: ['Dashboard'] }],
-    });
-    setFormOpen(true);
-  };
-
-  const openEditRole = (scope: 'global' | 'project', role: PersesGlobalRoleResource | RoleResource) => {
-    setFormError(null);
-    setForm({
-      mode: 'edit',
-      scope,
-      project: scope === 'project' ? (role as RoleResource).metadata.project : '',
-      name: role.metadata.name,
-      permissions: role.spec.permissions.map((p) => ({
-        actions: [...p.actions],
-        scopes: [...p.scopes],
-      })),
-    });
-    setFormOpen(true);
-  };
-
-  const handleSaveRole = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = form.name.trim();
-    if (!name) {
-      setFormError('Role name is required.');
-      return;
-    }
-    if (form.permissions.length === 0) {
-      setFormError('At least one permission rule is required.');
-      return;
-    }
-
-    setSaving(true);
-    setFormError(null);
-    setFeedback(null);
-
-    try {
-      if (form.scope === 'global') {
-        const payload: PersesGlobalRoleResource = {
-          kind: 'GlobalRole',
-          metadata: { name },
-          spec: { permissions: form.permissions },
-        };
-        if (form.mode === 'create') {
-          await createPersesGlobalRole(payload);
-        } else {
-          await updatePersesGlobalRole(payload);
-        }
-        await queryClient.invalidateQueries({ queryKey: ['perses', 'globalroles'] });
-      } else {
-        const payload: RoleResource = {
-          kind: 'Role',
-          metadata: { name, project: form.project },
-          spec: { permissions: form.permissions as RoleResource['spec']['permissions'] },
-        };
-        if (form.mode === 'create') {
-          await createProjectRole(form.project, payload);
-        } else {
-          await updateProjectRole(form.project, payload);
-        }
-        await queryClient.invalidateQueries({ queryKey: ['perses', 'projectroles', form.project] });
-        await queryClient.invalidateQueries({ queryKey: ['perses', 'all-project-rbac'] });
-      }
-      setFormOpen(false);
-      setFeedback({
-        kind: 'success',
-        text: `${form.mode === 'create' ? 'Created' : 'Updated'} ${form.scope === 'global' ? 'GlobalRole' : 'Role'} "${name}".`,
-      });
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDeleteRole = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    setFeedback(null);
-    try {
-      if (deleteTarget.scope === 'global') {
-        await deletePersesGlobalRole(deleteTarget.name);
-        await queryClient.invalidateQueries({ queryKey: ['perses', 'globalroles'] });
-      } else {
-        await deleteProjectRole(deleteTarget.project!, deleteTarget.name);
-        await queryClient.invalidateQueries({ queryKey: ['perses', 'projectroles', deleteTarget.project] });
-        await queryClient.invalidateQueries({ queryKey: ['perses', 'all-project-rbac'] });
-      }
-      setFeedback({ kind: 'success', text: `Deleted role "${deleteTarget.name}".` });
-      setDeleteTarget(null);
-    } catch (err) {
-      setFeedback({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
-      setDeleteTarget(null);
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const activeError = tab === 'global' ? globalError : projectError;
-  const activeLoading = tab === 'global' ? loadingGlobal : loadingProject;
-  const activeRoles = tab === 'global' ? globalRoles : projectRoles;
-  const availableScopes = form.scope === 'global' ? ALL_GLOBAL_SCOPES : ALL_PROJECT_SCOPES;
-
-  return (
-    <Stack spacing={1.5}>
-      {feedback && (
-        <Alert severity={feedback.kind} onClose={() => setFeedback(null)}>
-          {feedback.text}
-        </Alert>
-      )}
-
-      <Card>
-        <Box
-          sx={{
-            px: 2,
-            borderBottom: `1px solid ${tokens.borderSubtle}`,
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 1.5,
-          }}
-        >
-          <Tabs
-            value={tab}
-            onChange={(_, v: 'global' | 'project') => setTab(v)}
-            sx={{ minHeight: 42, '& .MuiTab-root': { minHeight: 42, py: 0.75, fontSize: 13 } }}
-          >
-            <Tab value="global" label={`Global Roles (${globalRoles.length})`} />
-            <Tab value="project" label="Project Roles" />
-          </Tabs>
-
-          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ py: 0.75 }}>
-            {tab === 'project' && (
-              <FormControl size="small" sx={{ minWidth: 180 }}>
-                <Select
-                  value={selectedProject}
-                  displayEmpty
-                  onChange={(e) => setSelectedProject(e.target.value)}
-                >
-                  {projects.length === 0 ? (
-                    <MenuItem value="" disabled>
-                      No projects
-                    </MenuItem>
-                  ) : (
-                    projects.map((p) => (
-                      <MenuItem key={p.metadata.name} value={p.metadata.name}>
-                        {getResourceDisplayName(p)}
-                      </MenuItem>
-                    ))
-                  )}
-                </Select>
-              </FormControl>
-            )}
-
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<Plus />}
-              disabled={tab === 'project' && !selectedProject}
-              onClick={openCreateRole}
-            >
-              Add {tab === 'global' ? 'GlobalRole' : 'Project Role'}
-            </Button>
-          </Stack>
-        </Box>
-
-        {activeError ? (
-          <Box sx={{ p: 2 }}>
-            <Alert severity={activeError instanceof ForbiddenError ? 'warning' : 'error'}>
-              {activeError instanceof ForbiddenError
-                ? activeError.message
-                : `Failed to load roles: ${activeError.message}`}
-            </Alert>
-          </Box>
-        ) : activeLoading ? (
-          <Stack alignItems="center" justifyContent="center" sx={{ py: 8 }}>
-            <CircularProgress />
-          </Stack>
-        ) : (
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Role Name</TableCell>
-                  <TableCell>Permissions (Actions &amp; Scopes)</TableCell>
-                  <TableCell>Created</TableCell>
-                  <TableCell>Updated</TableCell>
-                  <TableCell align="right" width={110}>
-                    Operations
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {activeRoles.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        No {tab === 'global' ? 'global' : 'project'} roles defined yet.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  activeRoles.map((role) => (
-                    <TableRow key={role.metadata.name} hover>
-                      <TableCell sx={{ fontWeight: 600 }}>{role.metadata.name}</TableCell>
-                      <TableCell>
-                        <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-                          {role.spec.permissions.map((perm, idx) => (
-                            <Chip
-                              key={idx}
-                              size="small"
-                              variant="outlined"
-                              label={`${perm.actions.join(',')} on ${perm.scopes.join(',')}`}
-                              sx={{ fontFamily: 'monospace', fontSize: 11.5 }}
-                            />
-                          ))}
-                        </Stack>
-                      </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12, color: 'text.secondary' }}>
-                        {formatIso(role.metadata.createdAt)}
-                      </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12, color: 'text.secondary' }}>
-                        {formatIso(role.metadata.updatedAt)}
-                      </TableCell>
-                      <TableCell align="right">
-                        <IconButton size="small" onClick={() => openEditRole(tab, role)}>
-                          <PencilOutline fontSize="small" />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() =>
-                            setDeleteTarget({
-                              scope: tab,
-                              project: tab === 'project' ? selectedProject : undefined,
-                              name: role.metadata.name,
-                            })
-                          }
-                        >
-                          <DeleteOutline fontSize="small" />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </Card>
-
-      {/* Create / Edit Role Dialog */}
-      <Dialog open={formOpen} onClose={() => setFormOpen(false)} maxWidth="md" fullWidth>
-        <Box component="form" onSubmit={handleSaveRole}>
-          <DialogTitle>
-            {form.mode === 'create' ? 'Create' : 'Edit'} {form.scope === 'global' ? 'GlobalRole' : `Project Role (${form.project})`}
-          </DialogTitle>
-          <DialogContent dividers>
-            <Stack spacing={2}>
-              {formError && <Alert severity="error">{formError}</Alert>}
-              <TextField
-                label="Role Name"
-                value={form.name}
-                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                disabled={form.mode === 'edit'}
-                required
-                size="small"
-                fullWidth
-              />
-
-              <Typography variant="subtitle2" fontWeight={700}>
-                Permissions
-              </Typography>
-
-              {form.permissions.map((perm, idx) => (
-                <Stack key={idx} direction={{ xs: 'column', sm: 'row' }} spacing={1.25} alignItems="center">
-                  <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
-                    <InputLabel>Actions</InputLabel>
-                    <Select
-                      multiple
-                      value={perm.actions}
-                      onChange={(e) => {
-                        const val = typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value;
-                        setForm((prev) => ({
-                          ...prev,
-                          permissions: prev.permissions.map((p, i) => (i === idx ? { ...p, actions: val } : p)),
-                        }));
-                      }}
-                      input={<OutlinedInput label="Actions" />}
-                      renderValue={(s) => s.join(', ')}
-                    >
-                      {ALL_ACTIONS.map((a) => (
-                        <MenuItem key={a} value={a}>
-                          <Checkbox checked={perm.actions.includes(a)} size="small" />
-                          <ListItemText primary={a} />
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-
-                  <FormControl size="small" sx={{ minWidth: 260, flex: 1.5 }}>
-                    <InputLabel>Scopes</InputLabel>
-                    <Select
-                      multiple
-                      value={perm.scopes}
-                      onChange={(e) => {
-                        const val = typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value;
-                        setForm((prev) => ({
-                          ...prev,
-                          permissions: prev.permissions.map((p, i) => (i === idx ? { ...p, scopes: val } : p)),
-                        }));
-                      }}
-                      input={<OutlinedInput label="Scopes" />}
-                      renderValue={(s) => s.join(', ')}
-                    >
-                      {availableScopes.map((sc) => (
-                        <MenuItem key={sc} value={sc}>
-                          <Checkbox checked={perm.scopes.includes(sc)} size="small" />
-                          <ListItemText primary={sc} />
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-
-                  <IconButton
-                    size="small"
-                    color="error"
-                    disabled={form.permissions.length <= 1}
-                    onClick={() =>
-                      setForm((prev) => ({
-                        ...prev,
-                        permissions: prev.permissions.filter((_, i) => i !== idx),
-                      }))
-                    }
-                  >
-                    <DeleteOutline fontSize="small" />
-                  </IconButton>
-                </Stack>
-              ))}
-
-              <Box>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<Plus />}
-                  onClick={() =>
-                    setForm((prev) => ({
-                      ...prev,
-                      permissions: [...prev.permissions, { actions: ['read'], scopes: ['Dashboard'] }],
-                    }))
-                  }
-                >
-                  Add permission rule
-                </Button>
-              </Box>
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setFormOpen(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="contained" disabled={saving}>
-              {saving ? 'Saving...' : 'Save Role'}
-            </Button>
-          </DialogActions>
-        </Box>
-      </Dialog>
-
-      {/* Delete Role Dialog */}
-      <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Delete Role</DialogTitle>
-        <DialogContent dividers>
-          <Typography variant="body2">
-            Are you sure you want to delete role <strong>{deleteTarget?.name}</strong>?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)} disabled={deleting}>
-            Cancel
-          </Button>
-          <Button color="error" variant="contained" onClick={handleDeleteRole} disabled={deleting}>
-            {deleting ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Stack>
-  );
-}
-
-export function SystemAboutView({
-  health,
-  config,
-}: {
-  health: PersesHealthResponse | undefined;
-  config: PersesFrontendConfig | undefined;
-}) {
-  const { data: plugins = [] } = useQuery<PersesPluginModuleResource[], Error>({
-    queryKey: ['perses', 'plugins'],
-    queryFn: fetchPersesPlugins,
-    retry: false,
-  });
-
-  return (
-    <Stack spacing={2}>
-      <Card>
-        <CardContent>
-          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
-            Perses Observability Runtime
-          </Typography>
-          <Table size="small">
-            <TableBody>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 600, width: 220 }}>Perses Backend Version</TableCell>
-                <TableCell sx={{ fontFamily: 'monospace' }}>{health?.version ?? '-'}</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 600 }}>Build Time</TableCell>
-                <TableCell sx={{ fontFamily: 'monospace' }}>{health?.buildTime ?? '-'}</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 600 }}>Git Commit</TableCell>
-                <TableCell sx={{ fontFamily: 'monospace' }}>{health?.commit ?? '-'}</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 600 }}>Database Status</TableCell>
-                <TableCell>
-                  <Chip
-                    size="small"
-                    color={health?.database === false ? 'error' : 'success'}
-                    label={health?.database === false ? 'Unavailable' : 'Healthy'}
-                  />
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 600 }}>Authentication</TableCell>
-                <TableCell>
-                  {config?.security?.enable_auth ? 'Enabled (Native + OAuth/OIDC)' : 'Disabled'}
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 600 }}>Platform Banner</TableCell>
-                <TableCell>{config?.frontend?.information ?? 'Unified Observability Stack'}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent>
-          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>
-            Loaded Perses Backend Plugins ({plugins.length} modules)
-          </Typography>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            {plugins.map((mod, idx) => (
-              <Chip
-                key={`${mod.metadata?.name ?? 'mod'}-${idx}`}
-                size="small"
-                variant="outlined"
-                label={`${mod.metadata?.name ?? 'Plugin'} ${mod.metadata?.version ? `v${mod.metadata.version}` : ''}`}
-                sx={{ fontFamily: 'monospace' }}
-              />
-            ))}
-          </Stack>
-        </CardContent>
-      </Card>
-    </Stack>
-  );
-}
-
-export function SiteSettingsView({
-  branding,
-  onSaveBranding,
-  canEdit = false,
-}: {
-  branding: SiteBrandingConfig;
-  onSaveBranding: (next: SiteBrandingConfig) => Promise<void>;
-  canEdit?: boolean;
-}) {
-  const muiTheme = useTheme();
-  const tokens = PALETTE_TOKENS[muiTheme.palette.mode];
-
-  const [draft, setDraft] = useState<SiteBrandingConfig>(branding);
-  const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
-
-  useEffect(() => {
-    setDraft(branding);
-  }, [branding]);
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 512 * 1024) {
-      setSaveMessage({ kind: 'error', text: 'Logo image must be 512 KB or smaller (PNG, SVG, JPG, or WebP).' });
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : '';
-      if (result) {
-        setDraft((prev) => ({ ...prev, logoUrl: result }));
-        setSaveMessage(null);
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canEdit) return;
-    setSaving(true);
-    setSaveMessage(null);
-    try {
-      await onSaveBranding(draft);
-      setSaveMessage({
-        kind: 'success',
-        text: 'Site branding saved and synced to Perses backend (GlobalVariable: site_branding_config).',
-      });
-    } catch (err) {
-      setSaveMessage({
-        kind: 'error',
-        text: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleReset = async () => {
-    if (!canEdit) return;
-    setSaving(true);
-    setSaveMessage(null);
-    try {
-      setDraft(DEFAULT_SITE_BRANDING);
-      await onSaveBranding(DEFAULT_SITE_BRANDING);
-      setSaveMessage({ kind: 'success', text: 'Site branding reset to defaults.' });
-    } catch (err) {
-      setSaveMessage({
-        kind: 'error',
-        text: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Stack spacing={2}>
-      <Card>
-        <CardContent>
-          <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 0.5 }}>
-            Site Branding &amp; Customization
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-            Dynamically customize the logo, product name, description, and organization label across the navigation bar,
-            login screen, and browser title. Settings are saved in Perses cluster storage and cached locally.
-          </Typography>
-
-          {/* Live Preview Banner */}
-          <Box
-            sx={{
-              p: 2,
-              mb: 3,
-              borderRadius: 1.5,
-              border: `1px solid ${tokens.borderSubtle}`,
-              bgcolor: tokens.bgSubtle,
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 2,
-            }}
-          >
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <PersesLogoMark size={38} logoUrl={draft.logoUrl} logoText={draft.logoText} />
-              <Box>
-                <Typography variant="subtitle1" fontWeight={800} lineHeight={1.2}>
-                  {draft.appName || DEFAULT_SITE_BRANDING.appName}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {draft.appSubtitle || DEFAULT_SITE_BRANDING.appSubtitle}
-                </Typography>
-              </Box>
-            </Stack>
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`Org label: ${draft.orgName || DEFAULT_SITE_BRANDING.orgName}`}
-            />
-          </Box>
-
-          {!canEdit && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
-              <strong>403 — Admin Access Required:</strong> Only users with the <code>admin</code> GlobalRole (or{' '}
-              <code>GlobalVariable</code> write permission) can modify Site Settings.
-            </Alert>
-          )}
-
-          {saveMessage && (
-            <Alert severity={saveMessage.kind} sx={{ mb: 2 }}>
-              {saveMessage.text}
-            </Alert>
-          )}
-
-          <Box component="form" onSubmit={handleSave}>
-            <Stack spacing={2.25}>
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-                <TextField
-                  label="Application Name"
-                  helperText="Displayed in the top-left navbar, login header, and browser tab"
-                  value={draft.appName}
-                  onChange={(e) => setDraft((prev) => ({ ...prev, appName: e.target.value }))}
-                  disabled={!canEdit}
-                  fullWidth
-                  size="small"
-                />
-                <TextField
-                  label="Organization / Workspace Subtitle"
-                  helperText="Displayed under the active user badge at the bottom-left sidebar"
-                  value={draft.orgName}
-                  onChange={(e) => setDraft((prev) => ({ ...prev, orgName: e.target.value }))}
-                  disabled={!canEdit}
-                  fullWidth
-                  size="small"
-                />
-              </Stack>
-
-              <TextField
-                label="Site Description / Subtitle"
-                helperText="Shown on the Login screen beneath the logo and in the browser title"
-                value={draft.appSubtitle}
-                onChange={(e) => setDraft((prev) => ({ ...prev, appSubtitle: e.target.value }))}
-                disabled={!canEdit}
-                fullWidth
-                size="small"
-              />
-
-              <Divider />
-
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
-                <TextField
-                  label="Logo Monogram (1–2 chars fallback)"
-                  helperText="Used inside the gradient icon when no custom logo image is set"
-                  value={draft.logoText}
-                  onChange={(e) => setDraft((prev) => ({ ...prev, logoText: e.target.value.slice(0, 2) }))}
-                  disabled={!canEdit}
-                  sx={{ width: { xs: '100%', md: 240 } }}
-                  size="small"
-                />
-                <TextField
-                  label="Custom Logo Image URL or Data URI"
-                  helperText="Paste an HTTPS image URL, or upload a PNG/SVG/JPG file using the button on the right"
-                  value={draft.logoUrl}
-                  onChange={(e) => setDraft((prev) => ({ ...prev, logoUrl: e.target.value }))}
-                  disabled={!canEdit}
-                  fullWidth
-                  size="small"
-                />
-                <Stack direction="row" spacing={1} sx={{ pt: { md: 0.25 }, flexShrink: 0 }}>
-                  <Button variant="outlined" component="label" size="medium" disabled={!canEdit}>
-                    Upload Logo
-                    <input
-                      type="file"
-                      hidden
-                      disabled={!canEdit}
-                      accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                      onChange={handleFileUpload}
-                    />
-                  </Button>
-                  {draft.logoUrl && (
-                    <Button
-                      variant="text"
-                      color="secondary"
-                      disabled={!canEdit}
-                      onClick={() => setDraft((prev) => ({ ...prev, logoUrl: '' }))}
-                    >
-                      Clear Logo
-                    </Button>
-                  )}
-                </Stack>
-              </Stack>
-
-              <Stack direction="row" spacing={1.5} justifyContent="flex-end" sx={{ pt: 1 }}>
-                <Button variant="outlined" color="inherit" disabled={!canEdit || saving} onClick={handleReset}>
-                  Reset to Default
-                </Button>
-                <Button type="submit" variant="contained" color="primary" disabled={!canEdit || saving}>
-                  {saving ? 'Saving...' : 'Save Site Settings'}
-                </Button>
-              </Stack>
-            </Stack>
-          </Box>
-        </CardContent>
-      </Card>
-
-      <SsoSettingsCard />
-    </Stack>
-  );
-}

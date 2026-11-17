@@ -2,20 +2,13 @@ import { createTheme } from '@mui/material';
 import type { Theme } from '@mui/material';
 import type { PersesChartsTheme } from '@perses-dev/components';
 import { generateChartsTheme, getTheme } from '@perses-dev/components';
+import type { SurfacePalette } from './theme';
 
 export type ThemeMode = 'light' | 'dark';
 
 export const THEME_STORAGE_KEY = 'perses-theme-mode';
 
-export interface ThemeTokenSet {
-  bgCanvas: string;
-  bgSurface: string;
-  bgSidebar: string;
-  bgHeader: string;
-  bgSubtle: string;
-  bgHover: string;
-  bgActiveNav: string;
-  borderSubtle: string;
+interface ThemeTokenSet extends SurfacePalette {
   primary: string;
   primaryLight: string;
   primaryDark: string;
@@ -25,11 +18,9 @@ export interface ThemeTokenSet {
   success: string;
   warning: string;
   error: string;
-  chartBarPurple: string;
-  tableHeaderBg: string;
 }
 
-export const PALETTE_TOKENS: Record<ThemeMode, ThemeTokenSet> = {
+const PALETTE_TOKENS: Record<ThemeMode, ThemeTokenSet> = {
   light: {
     bgCanvas: '#F5F6FA',
     bgSurface: '#FFFFFF',
@@ -72,20 +63,6 @@ export const PALETTE_TOKENS: Record<ThemeMode, ThemeTokenSet> = {
     chartBarPurple: '#818CF8',
     tableHeaderBg: '#161F30',
   },
-};
-
-export const PERSES_COLORS = {
-  bgDeep: PALETTE_TOKENS.dark.bgCanvas,
-  bgSurface: PALETTE_TOKENS.dark.bgSurface,
-  bgElevated: PALETTE_TOKENS.dark.bgSubtle,
-  borderSubtle: PALETTE_TOKENS.dark.borderSubtle,
-  accentCyan: '#38BDF8',
-  accentIndigo: '#818CF8',
-  accentEmerald: '#34D399',
-  accentAmber: '#FBBF24',
-  accentRose: '#F87171',
-  textPrimary: PALETTE_TOKENS.dark.textPrimary,
-  textSecondary: PALETTE_TOKENS.dark.textSecondary,
 };
 
 export function readStoredThemeMode(): ThemeMode {
@@ -134,6 +111,18 @@ export function createPersesTheme(mode: ThemeMode): Theme {
       text: {
         primary: tokens.textPrimary,
         secondary: tokens.textSecondary,
+      },
+      surface: {
+        bgCanvas: tokens.bgCanvas,
+        bgSurface: tokens.bgSurface,
+        bgSidebar: tokens.bgSidebar,
+        bgHeader: tokens.bgHeader,
+        bgSubtle: tokens.bgSubtle,
+        bgHover: tokens.bgHover,
+        bgActiveNav: tokens.bgActiveNav,
+        borderSubtle: tokens.borderSubtle,
+        chartBarPurple: tokens.chartBarPurple,
+        tableHeaderBg: tokens.tableHeaderBg,
       },
     },
     typography: {
@@ -277,7 +266,4 @@ export function createPersesChartsTheme(muiTheme: Theme, mode: ThemeMode): Perse
     },
   });
 }
-
-export const persesTheme = createPersesTheme('dark');
-export const persesChartsTheme = createPersesChartsTheme(persesTheme, 'dark');
 

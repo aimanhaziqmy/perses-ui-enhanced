@@ -2,20 +2,18 @@ import { Alert, Box, Button, Chip, FormControl, InputLabel, MenuItem, Select, St
 import type { ProjectResource } from '@perses-dev/client';
 import { ErrorAlert, ErrorBoundary, getResourceDisplayName } from '@perses-dev/components';
 import { ViewExplore } from '@perses-dev/explore';
-import { PluginRegistry, ValidationProvider, remotePluginLoader } from '@perses-dev/plugin-system';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { fetchProjects, useDatasourceTargets, usePersesDatasourceApi } from '../api/persesClient';
+import { fetchProjects, queryKeys, useDatasourceTargets, usePersesDatasourceApi } from '../api/persesClient';
 
 export function ExploreView() {
   const navigate = useNavigate();
-  const pluginLoader = useMemo(() => remotePluginLoader({ baseURL: '', apiPrefix: '' }), []);
   const [projectName, setProjectName] = useState<string>('');
 
   const { data: projects, error: projectsError } = useQuery<ProjectResource[], Error>({
-    queryKey: ['perses', 'projects'],
+    queryKey: queryKeys.projects,
     queryFn: fetchProjects,
   });
 
@@ -41,43 +39,37 @@ export function ExploreView() {
       ) : (
         <Box sx={{ flex: 1, minHeight: 540 }}>
           <ErrorBoundary FallbackComponent={ErrorAlert}>
-            <PluginRegistry pluginLoader={pluginLoader}>
-              <ValidationProvider>
-                <ErrorBoundary FallbackComponent={ErrorAlert}>
-                  <ViewExplore
-                    datasourceApi={datasourceApi}
-                    projectName={projectName || undefined}
-                    exploreTitleComponent={
-                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                        <FormControl size="small" sx={{ minWidth: 190 }}>
-                          <InputLabel id="explore-project-label" shrink>Datasource Scope</InputLabel>
-                          <Select
-                            labelId="explore-project-label"
-                            label="Datasource Scope"
-                            displayEmpty
-                            value={projectName}
-                            onChange={(e) => setProjectName(e.target.value)}
-                          >
-                            <MenuItem value="">Global Datasources</MenuItem>
-                            {(projects ?? []).map((p) => (
-                              <MenuItem key={p.metadata.name} value={p.metadata.name}>
-                                {getResourceDisplayName(p)}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          label="PromQL · LogsQL"
-                          sx={{ height: 24, fontSize: 11, fontFamily: 'monospace' }}
-                        />
-                      </Stack>
-                    }
+            <ViewExplore
+              datasourceApi={datasourceApi}
+              projectName={projectName || undefined}
+              exploreTitleComponent={
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <FormControl size="small" sx={{ minWidth: 190 }}>
+                    <InputLabel id="explore-project-label" shrink>Datasource Scope</InputLabel>
+                    <Select
+                      labelId="explore-project-label"
+                      label="Datasource Scope"
+                      displayEmpty
+                      value={projectName}
+                      onChange={(e) => setProjectName(e.target.value)}
+                    >
+                      <MenuItem value="">Global Datasources</MenuItem>
+                      {(projects ?? []).map((p) => (
+                        <MenuItem key={p.metadata.name} value={p.metadata.name}>
+                          {getResourceDisplayName(p)}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label="PromQL · LogsQL"
+                    sx={{ height: 24, fontSize: 11, fontFamily: 'monospace' }}
                   />
-                </ErrorBoundary>
-              </ValidationProvider>
-            </PluginRegistry>
+                </Stack>
+              }
+            />
           </ErrorBoundary>
         </Box>
       )}

@@ -6,12 +6,10 @@ import {
   CardContent,
   Chip,
   CircularProgress,
-  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Drawer,
   FormControl,
   FormControlLabel,
   IconButton,
@@ -69,11 +67,11 @@ import {
   setLocalLogPresets,
   useDatasourceTargets,
 } from '../api/persesClient';
-import { PALETTE_TOKENS } from '../theme/persesTheme';
 import type { ExportFormat } from '../utils/exportRecords';
 import { exportRawJsonlLinesToFile, exportRecordsToFile } from '../utils/exportRecords';
 import { VictoriaLogsBrandIcon } from './BrandIcons';
-import { JsonViewer } from './JsonViewer';
+import { LogDetailDrawer } from './LogDetailDrawer';
+import { LogsHistogramChart } from './LogsHistogramChart';
 
 interface QueryTabState {
   id: string;
@@ -157,12 +155,6 @@ function buildFallbackBuckets(entries: VictoriaLogEntry[], startMs: number, endM
   });
 }
 
-function formatDrawerWidth(size: 'small' | 'medium' | 'large'): number {
-  if (size === 'small') return 460;
-  if (size === 'large') return 860;
-  return 640;
-}
-
 function LevelBadge({ level }: { level: LogLevel }) {
   const meta = LEVEL_META[level];
   return (
@@ -192,8 +184,6 @@ function LevelBadge({ level }: { level: LogLevel }) {
 
 export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string }) {
   const muiTheme = useTheme();
-  const mode = muiTheme.palette.mode;
-  const tokens = PALETTE_TOKENS[mode];
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -683,7 +673,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
               No VictoriaLogs data source configured
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Add a VictoriaLogsDatasource in Integrations → Data sources to query logs, filter levels, and save shared
+              Add a VictoriaLogsDatasource in Integrations â†’ Data sources to query logs, filter levels, and save shared
               presets.
             </Typography>
             <Button variant="contained" onClick={() => navigate('/datasources')}>
@@ -708,7 +698,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
         <Box
           sx={{
             px: 2,
-            borderBottom: `1px solid ${tokens.borderSubtle}`,
+            borderBottom: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
             display: 'flex',
             alignItems: 'center',
             gap: 1,
@@ -802,18 +792,18 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 flex: 1,
                 display: 'flex',
                 alignItems: 'center',
-                border: `1px solid ${tokens.borderSubtle}`,
+                border: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
                 borderRadius: 1.5,
                 overflow: 'hidden',
-                bgcolor: tokens.bgSurface,
+                bgcolor: muiTheme.palette.surface.bgSurface,
               }}
             >
               <Box
                 sx={{
                   px: 1.5,
                   py: 0.9,
-                  bgcolor: tokens.bgSubtle,
-                  borderRight: `1px solid ${tokens.borderSubtle}`,
+                  bgcolor: muiTheme.palette.surface.bgSubtle,
+                  borderRight: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
                   fontSize: 12.5,
                   fontWeight: 600,
                   color: 'text.secondary',
@@ -932,234 +922,16 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
           </Stack>
 
           {/* Stacked Level Log Statistics Histogram */}
-          <Box sx={{ mt: 2 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1} sx={{ mb: 1 }}>
-              <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
-                <Typography variant="caption" fontWeight={600} color="text.secondary">
-                  All log statistics
-                </Typography>
-                <Typography variant="caption" fontSize={11} color="text.secondary">
-                  (click any bar to zoom · stacked by severity)
-                </Typography>
-              </Stack>
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', fontSize: 11 }}>
-                  {formatFullTs(startDate)} ~ {formatFullTs(endDate)}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="primary.main"
-                  sx={{ cursor: 'pointer', fontWeight: 600 }}
-                  onClick={() => setShowChart((prev) => !prev)}
-                >
-                  {showChart ? 'Hide chart' : 'Show chart'}
-                </Typography>
-              </Stack>
-            </Stack>
-
-            <Collapse in={showChart}>
-              <Box
-                sx={{
-                  p: 1.25,
-                  borderRadius: 1.5,
-                  bgcolor: tokens.bgSubtle,
-                  border: `1px solid ${tokens.borderSubtle}`,
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: 76 }}>
-                  {effectiveBuckets.map((bucket, idx) => {
-                    const total = bucket.count;
-                    const totalHeightPx = total > 0 ? Math.max(4, Math.round((total / maxBucketCount) * 68)) : 2;
-                    const tooltipBg = mode === 'light' ? '#FFFFFF' : '#0B1220';
-                    const tooltipBorder = mode === 'light' ? '#CBD5E1' : 'rgba(148, 163, 184, 0.32)';
-                    const tooltipText = (
-                      <Box sx={{ minWidth: 215, p: 0.25 }}>
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            display: 'block',
-                            fontWeight: 700,
-                            fontFamily: 'monospace',
-                            color: tokens.textPrimary,
-                            fontSize: 11.5,
-                          }}
-                        >
-                          {formatCompactTs(bucket.timestamp)} ~ {formatCompactTs(bucket.endTimestamp)}
-                        </Typography>
-                        <Stack
-                          direction="row"
-                          justifyContent="space-between"
-                          alignItems="center"
-                          sx={{
-                            mt: 0.4,
-                            mb: 0.75,
-                            pb: 0.6,
-                            borderBottom: `1px solid ${tokens.borderSubtle}`,
-                          }}
-                        >
-                          <Typography variant="caption" sx={{ fontWeight: 600, color: tokens.textPrimary }}>
-                            Total: {total.toLocaleString()} logs
-                          </Typography>
-                          <Typography variant="caption" sx={{ fontSize: 10.5, color: tokens.textSecondary }}>
-                            Click bar to zoom
-                          </Typography>
-                        </Stack>
-                        <Stack spacing={0.35}>
-                          {ALL_LOG_LEVELS.map((lvl) => (
-                            <Stack
-                              key={lvl}
-                              direction="row"
-                              justifyContent="space-between"
-                              alignItems="center"
-                              spacing={2}
-                            >
-                              <Stack direction="row" spacing={0.75} alignItems="center">
-                                <Box
-                                  sx={{
-                                    width: 8,
-                                    height: 8,
-                                    borderRadius: '50%',
-                                    bgcolor: LEVEL_META[lvl].color,
-                                    flexShrink: 0,
-                                  }}
-                                />
-                                <Typography variant="caption" sx={{ fontSize: 11.5, color: tokens.textSecondary }}>
-                                  {LEVEL_META[lvl].label}
-                                </Typography>
-                              </Stack>
-                              <Typography
-                                variant="caption"
-                                sx={{
-                                  fontSize: 11.5,
-                                  fontWeight: 700,
-                                  fontFamily: 'monospace',
-                                  color: tokens.textPrimary,
-                                }}
-                              >
-                                {bucket.counts[lvl].toLocaleString()}
-                              </Typography>
-                            </Stack>
-                          ))}
-                        </Stack>
-                      </Box>
-                    );
-
-                    const orderedLevels: LogLevel[] = ['error', 'warning', 'info', 'debug', 'other'];
-
-                    return (
-                      <Tooltip
-                        key={`${bucket.timestamp}-${idx}`}
-                        title={tooltipText}
-                        arrow
-                        slotProps={{
-                          tooltip: {
-                            sx: {
-                              bgcolor: tooltipBg,
-                              color: tokens.textPrimary,
-                              border: `1px solid ${tooltipBorder}`,
-                              borderRadius: 1.75,
-                              p: 1.25,
-                              maxWidth: 320,
-                              boxShadow:
-                                mode === 'light'
-                                  ? '0 10px 28px -4px rgba(15, 23, 42, 0.16)'
-                                  : '0 12px 32px -4px rgba(0, 0, 0, 0.72)',
-                            },
-                          },
-                          arrow: {
-                            sx: {
-                              color: tooltipBg,
-                              '&::before': {
-                                border: `1px solid ${tooltipBorder}`,
-                              },
-                            },
-                          },
-                        }}
-                      >
-                        <Box
-                          onClick={() => handleZoomToBucket(bucket)}
-                          sx={{
-                            flex: 1,
-                            height: '100%',
-                            display: 'flex',
-                            alignItems: 'flex-end',
-                            cursor: 'pointer',
-                            '&:hover .stacked-bar': {
-                              filter: 'brightness(1.12)',
-                              outline: `1px solid ${tokens.borderSubtle}`,
-                            },
-                          }}
-                        >
-                          {total === 0 ? (
-                            <Box
-                              className="stacked-bar"
-                              sx={{
-                                width: '100%',
-                                height: 2,
-                                bgcolor: 'divider',
-                                opacity: 0.35,
-                                borderRadius: '2px 2px 0 0',
-                              }}
-                            />
-                          ) : (
-                            <Box
-                              className="stacked-bar"
-                              sx={{
-                                width: '100%',
-                                height: totalHeightPx,
-                                display: 'flex',
-                                flexDirection: 'column-reverse',
-                                borderRadius: '2px 2px 0 0',
-                                overflow: 'hidden',
-                              }}
-                            >
-                              {orderedLevels.map((lvl) => {
-                                const c = bucket.counts[lvl];
-                                if (c <= 0) return null;
-                                const pct = (c / total) * 100;
-                                return (
-                                  <Box
-                                    key={lvl}
-                                    sx={{
-                                      width: '100%',
-                                      height: `${pct}%`,
-                                      minHeight: 1.5,
-                                      bgcolor: LEVEL_META[lvl].color,
-                                    }}
-                                  />
-                                );
-                              })}
-                            </Box>
-                          )}
-                        </Box>
-                      </Tooltip>
-                    );
-                  })}
-                </Box>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 0.75 }} flexWrap="wrap" gap={1}>
-                  <Typography variant="caption" fontSize={10.5} color="text.secondary">
-                    {effectiveBuckets[0]?.label ?? ''}
-                  </Typography>
-                  <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
-                    {ALL_LOG_LEVELS.map((lvl) => (
-                      <Stack key={lvl} direction="row" spacing={0.5} alignItems="center">
-                        <Box sx={{ width: 8, height: 8, borderRadius: 0.5, bgcolor: LEVEL_META[lvl].color }} />
-                        <Typography variant="caption" fontSize={10.5} color="text.secondary">
-                          {LEVEL_META[lvl].label}: {levelTotals[lvl]}
-                        </Typography>
-                      </Stack>
-                    ))}
-                    <Typography variant="caption" fontSize={10.5} color="text.secondary">
-                      · Peak bucket: {maxBucketCount}
-                    </Typography>
-                  </Stack>
-                  <Typography variant="caption" fontSize={10.5} color="text.secondary">
-                    {effectiveBuckets[effectiveBuckets.length - 1]?.label ?? ''}
-                  </Typography>
-                </Stack>
-              </Box>
-            </Collapse>
-          </Box>
+          <LogsHistogramChart
+            buckets={effectiveBuckets}
+            levelTotals={levelTotals}
+            maxBucketCount={maxBucketCount}
+            startLabel={formatFullTs(startDate)}
+            endLabel={formatFullTs(endDate)}
+            showChart={showChart}
+            onToggleShowChart={() => setShowChart((prev) => !prev)}
+            onZoomToBucket={handleZoomToBucket}
+          />
         </CardContent>
       </Card>
 
@@ -1171,7 +943,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
           sx={{
             px: 2,
             py: 1,
-            borderBottom: `1px solid ${tokens.borderSubtle}`,
+            borderBottom: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
             display: 'flex',
             flexWrap: 'wrap',
             gap: 1.5,
@@ -1258,7 +1030,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 Export current as JSONL (NDJSON)
               </MenuItem>
               <ListSubheader sx={{ lineHeight: '28px', fontSize: 11 }}>
-                Chunked stream (1,000/batch — zero timeout)
+                Chunked stream (1,000/batch â€” zero timeout)
               </ListSubheader>
               <MenuItem onClick={() => void handleExportLogs('csv', 'stream20k')}>
                 Stream up to 20,000 logs as CSV
@@ -1317,7 +1089,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                         onClick={() => setSelectedLogIndex(globalIndex)}
                         sx={{
                           cursor: 'pointer',
-                          '&.Mui-selected': { bgcolor: tokens.bgActiveNav },
+                          '&.Mui-selected': { bgcolor: muiTheme.palette.surface.bgActiveNav },
                         }}
                       >
                         <TableCell sx={{ verticalAlign: 'top', pt: 0.75 }}>
@@ -1327,7 +1099,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                               onClick={(e) => toggleRowExpand(globalIndex, e)}
                               sx={{ fontSize: 12, width: 24, height: 24 }}
                             >
-                              {isExpanded ? '▾' : '▸'}
+                              {isExpanded ? 'â–¾' : 'â–¸'}
                             </IconButton>
                           </Tooltip>
                         </TableCell>
@@ -1369,7 +1141,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                                 sx={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
-                                  border: `1px solid ${tokens.borderSubtle}`,
+                                  border: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
                                   borderRadius: 1,
                                   overflow: 'hidden',
                                   fontSize: 11.5,
@@ -1382,9 +1154,9 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                                   sx={{
                                     px: 0.65,
                                     py: 0.1,
-                                    bgcolor: tokens.bgSubtle,
+                                    bgcolor: muiTheme.palette.surface.bgSubtle,
                                     color: 'text.secondary',
-                                    borderRight: `1px solid ${tokens.borderSubtle}`,
+                                    borderRight: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
                                     fontWeight: 600,
                                     flexShrink: 0,
                                   }}
@@ -1415,9 +1187,9 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                         <TableRow>
                           <TableCell
                             colSpan={1 + (showLineNum ? 1 : 0) + 1 + (showLogTime ? 1 : 0) + 1}
-                            sx={{ p: 0, bgcolor: tokens.bgSubtle }}
+                            sx={{ p: 0, bgcolor: muiTheme.palette.surface.bgSubtle }}
                           >
-                            <Box sx={{ px: 3, py: 1.25, borderBottom: `1px solid ${tokens.borderSubtle}` }}>
+                            <Box sx={{ px: 3, py: 1.25, borderBottom: `1px solid ${muiTheme.palette.surface.borderSubtle}` }}>
                               <Stack
                                 direction="row"
                                 justifyContent="space-between"
@@ -1433,10 +1205,10 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                                   onClick={() => setSelectedLogIndex(globalIndex)}
                                   sx={{ fontSize: 11.5, py: 0 }}
                                 >
-                                  Open Detail Drawer →
+                                  Open Detail Drawer â†’
                                 </Button>
                               </Stack>
-                              <Table size="small" sx={{ bgcolor: tokens.bgSurface, borderRadius: 1 }}>
+                              <Table size="small" sx={{ bgcolor: muiTheme.palette.surface.bgSurface, borderRadius: 1 }}>
                                 <TableBody>
                                   {Object.entries(entry)
                                     .sort(([a], [b]) => a.localeCompare(b))
@@ -1530,7 +1302,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
           sx={{
             px: 2,
             py: 0.5,
-            borderTop: `1px solid ${tokens.borderSubtle}`,
+            borderTop: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
@@ -1543,7 +1315,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
               <Chip
                 size="small"
                 variant="outlined"
-                label={`Batch #${cursorStack.length + 1} · up to ${LOG_BATCH_SIZE}/slice`}
+                label={`Batch #${cursorStack.length + 1} Â· up to ${LOG_BATCH_SIZE}/slice`}
                 sx={{ fontFamily: 'monospace', fontSize: 11 }}
               />
               <Button
@@ -1560,7 +1332,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 disabled={cursorStack.length === 0 || fetchingLogs}
                 onClick={handleLoadNewerBatch}
               >
-                ← Newer
+                â† Newer
               </Button>
               <Button
                 size="small"
@@ -1568,7 +1340,7 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
                 disabled={!hasOlderBatch || fetchingLogs}
                 onClick={handleLoadOlderBatch}
               >
-                Older →
+                Older â†’
               </Button>
             </Stack>
           ) : (
@@ -1701,253 +1473,19 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
         </DialogActions>
       </Dialog>
 
-      {/* Right Slide-Out Log Detail Drawer */}
-      <Drawer
-        anchor="right"
-        open={Boolean(selectedEntry)}
+      <LogDetailDrawer
+        selectedEntry={selectedEntry}
+        selectedIndex={selectedLogIndex}
+        totalCount={entries.length}
+        drawerSize={drawerSize}
+        drawerTab={drawerTab}
+        copiedJson={copiedJson}
         onClose={() => setSelectedLogIndex(null)}
-        PaperProps={{
-          sx: {
-            width: { xs: '100vw', sm: formatDrawerWidth(drawerSize) },
-            maxWidth: '100vw',
-            bgcolor: tokens.bgSurface,
-            display: 'flex',
-            flexDirection: 'column',
-          },
-        }}
-      >
-        {selectedEntry && (
-          <>
-            {/* Drawer Header */}
-            <Box
-              sx={{
-                px: 2.5,
-                py: 1.5,
-                borderBottom: `1px solid ${tokens.borderSubtle}`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 1.5,
-              }}
-            >
-              <Stack direction="row" spacing={1} alignItems="center">
-                <LevelBadge level={classifyLogLevel(selectedEntry)} />
-                <Typography variant="subtitle1" fontWeight={700} sx={{ fontFamily: 'monospace' }}>
-                  {formatCompactTs(selectedEntry._time)}
-                </Typography>
-              </Stack>
-
-              <Stack direction="row" spacing={1} alignItems="center">
-                <ToggleButtonGroup
-                  size="small"
-                  exclusive
-                  value={drawerSize}
-                  onChange={(_, val: 'small' | 'medium' | 'large' | null) => {
-                    if (val) setDrawerSize(val);
-                  }}
-                >
-                  <ToggleButton value="small" sx={{ px: 1.25, py: 0.25, fontSize: 12 }}>
-                    Small
-                  </ToggleButton>
-                  <ToggleButton value="medium" sx={{ px: 1.25, py: 0.25, fontSize: 12 }}>
-                    Medium
-                  </ToggleButton>
-                  <ToggleButton value="large" sx={{ px: 1.25, py: 0.25, fontSize: 12 }}>
-                    Large
-                  </ToggleButton>
-                </ToggleButtonGroup>
-                <IconButton size="small" onClick={() => setSelectedLogIndex(null)} aria-label="Close detail drawer">
-                  ✕
-                </IconButton>
-              </Stack>
-            </Box>
-
-            {/* Drawer Body */}
-            <Box sx={{ flex: 1, overflowY: 'auto', p: 2.5 }}>
-              <Stack spacing={1.25} sx={{ mb: 2 }}>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-                  <Box
-                    sx={{
-                      flex: 1,
-                      p: 1.25,
-                      borderRadius: 1,
-                      border: `1px solid ${tokens.borderSubtle}`,
-                      bgcolor: tokens.bgSubtle,
-                    }}
-                  >
-                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-                      _msg
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      fontWeight={600}
-                      sx={{ fontFamily: 'monospace', fontSize: 12.5, mt: 0.25, wordBreak: 'break-word' }}
-                    >
-                      {selectedEntry._msg || '-'}
-                    </Typography>
-                  </Box>
-
-                  <Box
-                    sx={{
-                      width: { xs: '100%', sm: 225 },
-                      flexShrink: 0,
-                      p: 1.25,
-                      borderRadius: 1,
-                      border: `1px solid ${tokens.borderSubtle}`,
-                      bgcolor: tokens.bgSubtle,
-                    }}
-                  >
-                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-                      _time
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      fontWeight={600}
-                      sx={{ fontFamily: 'monospace', fontSize: 12, mt: 0.25, wordBreak: 'break-word' }}
-                    >
-                      {selectedEntry._time}
-                    </Typography>
-                  </Box>
-                </Stack>
-
-                {selectedEntry._stream_id && (
-                  <Box
-                    sx={{
-                      p: 1.25,
-                      borderRadius: 1,
-                      border: `1px solid ${tokens.borderSubtle}`,
-                      bgcolor: tokens.bgSubtle,
-                    }}
-                  >
-                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-                      _stream_id
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      fontWeight={600}
-                      sx={{ fontFamily: 'monospace', fontSize: 12, mt: 0.25, wordBreak: 'break-all' }}
-                    >
-                      {selectedEntry._stream_id}
-                    </Typography>
-                  </Box>
-                )}
-
-                {selectedEntry._stream && (
-                  <Box
-                    sx={{
-                      p: 1.25,
-                      borderRadius: 1,
-                      border: `1px solid ${tokens.borderSubtle}`,
-                      bgcolor: tokens.bgSubtle,
-                    }}
-                  >
-                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-                      _stream
-                    </Typography>
-                    <Typography
-                      variant="body2"
-                      fontWeight={600}
-                      sx={{ fontFamily: 'monospace', fontSize: 12, mt: 0.25, wordBreak: 'break-word' }}
-                    >
-                      {selectedEntry._stream}
-                    </Typography>
-                  </Box>
-                )}
-              </Stack>
-
-              <Box
-                sx={{
-                  borderBottom: `1px solid ${tokens.borderSubtle}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  mb: 1.25,
-                }}
-              >
-                <Tabs
-                  value={drawerTab}
-                  onChange={(_, v: 'table' | 'json') => setDrawerTab(v)}
-                  sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5, fontSize: 13 } }}
-                >
-                  <Tab value="table" label="Table" />
-                  <Tab value="json" label="JSON" />
-                </Tabs>
-
-                <Button size="small" variant="text" onClick={() => void handleCopyJson()} sx={{ fontSize: 12 }}>
-                  {copiedJson ? '✓ Copied!' : '❐ Copy to clipboard'}
-                </Button>
-              </Box>
-
-              {drawerTab === 'table' ? (
-                <Table size="small">
-                  <TableBody>
-                    {Object.entries(selectedEntry)
-                      .filter(([k]) => !k.startsWith('_'))
-                      .sort(([a], [b]) => a.localeCompare(b))
-                      .map(([k, v]) => (
-                        <TableRow key={k} hover>
-                          <TableCell
-                            sx={{
-                              width: 190,
-                              fontFamily: 'monospace',
-                              fontSize: 12,
-                              color: 'text.secondary',
-                              verticalAlign: 'top',
-                            }}
-                          >
-                            {k}
-                          </TableCell>
-                          <TableCell
-                            sx={{
-                              fontFamily: 'monospace',
-                              fontSize: 12,
-                              wordBreak: 'break-word',
-                              whiteSpace: 'pre-wrap',
-                            }}
-                          >
-                            <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between">
-                              <span>{String(v)}</span>
-                              <Tooltip title={`Filter by ${k}:="${String(v)}"`}>
-                                <Chip
-                                  size="small"
-                                  label="+ filter"
-                                  variant="outlined"
-                                  onClick={() => appendFieldFilter(k, String(v))}
-                                  sx={{ height: 20, fontSize: 10.5, cursor: 'pointer', flexShrink: 0 }}
-                                />
-                              </Tooltip>
-                            </Stack>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <JsonViewer value={selectedEntry} title="Log Record JSON" maxHeight="100%" />
-              )}
-            </Box>
-
-            <Box
-              sx={{
-                px: 2.5,
-                py: 1,
-                borderTop: `1px solid ${tokens.borderSubtle}`,
-                bgcolor: tokens.bgSubtle,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11.5 }}>
-                Use ↑ / ↓ to view previous/next log, Esc to close
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', fontSize: 11.5 }}>
-                {selectedLogIndex !== null ? `${selectedLogIndex + 1} / ${entries.length}` : ''}
-              </Typography>
-            </Box>
-          </>
-        )}
-      </Drawer>
+        onChangeSize={setDrawerSize}
+        onChangeTab={setDrawerTab}
+        onCopyJson={() => void handleCopyJson()}
+        onAppendFieldFilter={appendFieldFilter}
+      />
     </Stack>
   );
 }

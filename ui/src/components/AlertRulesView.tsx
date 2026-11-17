@@ -6,14 +6,8 @@ import {
   CardContent,
   Chip,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   FormControl,
-  FormControlLabel,
   IconButton,
-  InputLabel,
   ListSubheader,
   Menu,
   MenuItem,
@@ -47,7 +41,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type {
-  AlertRuleConditionOp,
   AlertRuleDefinition,
   LiveAlertRuleEvaluation,
   VictoriaLogsQueryResult,
@@ -63,10 +56,10 @@ import {
   saveAlertRulesConfig,
   useDatasourceTargets,
 } from '../api/persesClient';
-import { PALETTE_TOKENS } from '../theme/persesTheme';
 import type { ExportFormat } from '../utils/exportRecords';
 import { exportRecordsToFile } from '../utils/exportRecords';
-import { JsonViewer } from './JsonViewer';
+import { AlertRuleDialogs, type RuleFormState } from './AlertRuleDialogs';
+import { BackendAlertsPanel } from './BackendAlertsPanel';
 
 const SUGGESTED_GROUPS = ['Core Infrastructure', 'GPU & AI Compute', 'Workloads', 'Storage', 'Observability', 'Custom'];
 
@@ -74,22 +67,6 @@ function formatTs(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toISOString().replace('T', ' ').slice(0, 19);
-}
-
-interface RuleFormState {
-  mode: 'create' | 'edit';
-  id: string;
-  name: string;
-  group: string;
-  datasourceType: 'prometheus' | 'victorialogs';
-  datasourceName: string;
-  query: string;
-  conditionOp: AlertRuleConditionOp;
-  threshold: string;
-  thresholdLabel: string;
-  severity: 'critical' | 'warning' | 'info';
-  lookbackMinutes: string;
-  enabled: boolean;
 }
 
 const DEFAULT_FORM: RuleFormState = {
@@ -108,14 +85,12 @@ const DEFAULT_FORM: RuleFormState = {
   enabled: true,
 };
 
-export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'rules' | 'events' }) {
+export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'rules' | 'backend' | 'events' }) {
   const muiTheme = useTheme();
-  const mode = muiTheme.palette.mode;
-  const tokens = PALETTE_TOKENS[mode];
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [subTab, setSubTab] = useState<'rules' | 'events'>(defaultSubTab);
+  const [subTab, setSubTab] = useState<'rules' | 'backend' | 'events'>(defaultSubTab);
   useEffect(() => {
     setSubTab(defaultSubTab);
   }, [defaultSubTab]);
@@ -414,22 +389,25 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
       )}
 
       <Card>
-        <Box sx={{ px: 2, borderBottom: `1px solid ${tokens.borderSubtle}` }}>
+        <Box sx={{ px: 2, borderBottom: `1px solid ${muiTheme.palette.surface.borderSubtle}` }}>
           <Tabs
             value={subTab}
-            onChange={(_, val: 'rules' | 'events') => {
+            onChange={(_, val: 'rules' | 'backend' | 'events') => {
               setSubTab(val);
               setPage(0);
             }}
             sx={{ minHeight: 42, '& .MuiTab-root': { minHeight: 42, py: 0.75, fontSize: 13 } }}
           >
             <Tab value="rules" label={`Alert rules (${rulesConfig.length})`} />
+            <Tab value="backend" label="Backend Rules & Alerts (vmalert)" />
             <Tab value="events" label="Cluster Events (Logs)" />
           </Tabs>
         </Box>
       </Card>
 
-      {subTab === 'rules' ? (
+      {subTab === 'backend' ? (
+        <BackendAlertsPanel />
+      ) : subTab === 'rules' ? (
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'stretch' }}>
           {/* Left Preset Filters & Groups */}
           <Card sx={{ width: 224, flexShrink: 0, display: { xs: 'none', md: 'block' } }}>
@@ -450,7 +428,7 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
                   cursor: 'pointer',
                   fontSize: 13,
                   fontWeight: selectedGroup === 'All' ? 600 : 400,
-                  bgcolor: selectedGroup === 'All' ? tokens.bgActiveNav : 'transparent',
+                  bgcolor: selectedGroup === 'All' ? muiTheme.palette.surface.bgActiveNav : 'transparent',
                   color: selectedGroup === 'All' ? 'primary.main' : 'text.primary',
                 }}
               >
@@ -487,9 +465,9 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
                           cursor: 'pointer',
                           fontSize: 13,
                           fontWeight: selected ? 600 : 400,
-                          bgcolor: selected ? tokens.bgActiveNav : 'transparent',
+                          bgcolor: selected ? muiTheme.palette.surface.bgActiveNav : 'transparent',
                           color: selected ? 'primary.main' : 'text.secondary',
-                          '&:hover': { bgcolor: tokens.bgHover },
+                          '&:hover': { bgcolor: muiTheme.palette.surface.bgHover },
                         }}
                       >
                         {group}
@@ -505,7 +483,7 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
             <Box
               sx={{
                 p: 1.5,
-                borderBottom: `1px solid ${tokens.borderSubtle}`,
+                borderBottom: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
                 display: 'flex',
                 flexWrap: 'wrap',
                 gap: 1.25,
@@ -516,7 +494,7 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
                 size="small"
                 onClick={() => void refetchRules()}
                 disabled={fetchingRules}
-                sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
+                sx={{ border: `1px solid ${muiTheme.palette.surface.borderSubtle}`, borderRadius: 1 }}
               >
                 <Refresh fontSize="small" />
               </IconButton>
@@ -737,7 +715,7 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
           <Box
             sx={{
               p: 1.5,
-              borderBottom: `1px solid ${tokens.borderSubtle}`,
+              borderBottom: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
               display: 'flex',
               flexWrap: 'wrap',
               gap: 1.25,
@@ -750,7 +728,7 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
                 size="small"
                 onClick={() => void refetchEvents()}
                 disabled={fetchingEvents || !activeVlTarget}
-                sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
+                sx={{ border: `1px solid ${muiTheme.palette.surface.borderSubtle}`, borderRadius: 1 }}
               >
                 <Refresh fontSize="small" />
               </IconButton>
@@ -915,231 +893,22 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
         </Card>
       )}
 
-      {/* Create / Edit Rule Dialog */}
-      <Dialog open={formOpen} onClose={() => setFormOpen(false)} maxWidth="sm" fullWidth>
-        <Box component="form" onSubmit={handleSaveRule}>
-          <DialogTitle>{form.mode === 'create' ? 'Create Alert Rule' : `Edit Alert Rule: ${form.name}`}</DialogTitle>
-          <DialogContent dividers>
-            <Stack spacing={2}>
-              {formError && <Alert severity="error">{formError}</Alert>}
-
-              <TextField
-                label="Rule Name"
-                placeholder="e.g. High CPU Load > 90%"
-                value={form.name}
-                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                required
-                fullWidth
-                size="small"
-              />
-
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <TextField
-                  label="Group"
-                  value={form.group}
-                  onChange={(e) => setForm((prev) => ({ ...prev, group: e.target.value }))}
-                  fullWidth
-                  size="small"
-                  helperText={`Suggested: ${SUGGESTED_GROUPS.slice(0, 4).join(', ')}`}
-                />
-
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Severity</InputLabel>
-                  <Select
-                    label="Severity"
-                    value={form.severity}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, severity: e.target.value as RuleFormState['severity'] }))
-                    }
-                  >
-                    <MenuItem value="critical">Critical</MenuItem>
-                    <MenuItem value="warning">Warning</MenuItem>
-                    <MenuItem value="info">Info</MenuItem>
-                  </Select>
-                </FormControl>
-              </Stack>
-
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Query Engine</InputLabel>
-                  <Select
-                    label="Query Engine"
-                    value={form.datasourceType}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        datasourceType: e.target.value as 'prometheus' | 'victorialogs',
-                        datasourceName: '',
-                      }))
-                    }
-                  >
-                    <MenuItem value="prometheus">Prometheus / Metrics (PromQL)</MenuItem>
-                    <MenuItem value="victorialogs">VictoriaLogs (LogsQL)</MenuItem>
-                  </Select>
-                </FormControl>
-
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Target Datasource</InputLabel>
-                  <Select
-                    label="Target Datasource"
-                    value={form.datasourceName}
-                    onChange={(e) => setForm((prev) => ({ ...prev, datasourceName: e.target.value }))}
-                  >
-                    <MenuItem value="">Auto (Default datasource)</MenuItem>
-                    {targetOptionsForForm.map((t) => (
-                      <MenuItem key={datasourceTargetKey(t)} value={t.name}>
-                        {t.name} ({t.scope === 'global' ? 'Global' : t.project})
-                      </MenuItem>
-                    ))}
-                    {form.datasourceName &&
-                      !targetOptionsForForm.some(
-                        (t) => t.name === form.datasourceName || datasourceTargetKey(t) === form.datasourceName,
-                      ) && (
-                        <MenuItem value={form.datasourceName}>{form.datasourceName} (missing)</MenuItem>
-                      )}
-                  </Select>
-                </FormControl>
-              </Stack>
-
-              <TextField
-                label={form.datasourceType === 'prometheus' ? 'PromQL Query' : 'LogsQL Query'}
-                placeholder={
-                  form.datasourceType === 'prometheus'
-                    ? 'e.g. 100 - (avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100)'
-                    : 'e.g. level:="error" OR OOMKilled'
-                }
-                value={form.query}
-                onChange={(e) => setForm((prev) => ({ ...prev, query: e.target.value }))}
-                required
-                fullWidth
-                multiline
-                minRows={2}
-                size="small"
-                InputProps={{ sx: { fontFamily: 'monospace', fontSize: 12.5 } }}
-              />
-
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Fire Condition</InputLabel>
-                  <Select
-                    label="Fire Condition"
-                    value={form.conditionOp}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, conditionOp: e.target.value as AlertRuleConditionOp }))
-                    }
-                  >
-                    <MenuItem value=">">Value &gt; Threshold</MenuItem>
-                    <MenuItem value=">=">Value &gt;= Threshold</MenuItem>
-                    <MenuItem value="<">Value &lt; Threshold</MenuItem>
-                    <MenuItem value="<=">Value &lt;= Threshold</MenuItem>
-                    <MenuItem value="==">Value == Threshold</MenuItem>
-                    <MenuItem value="!=">Value != Threshold</MenuItem>
-                    <MenuItem value="nonempty">Result non-empty (&gt; 0 series/logs)</MenuItem>
-                    <MenuItem value="empty">Result empty (0 series/logs)</MenuItem>
-                  </Select>
-                </FormControl>
-
-                {!['nonempty', 'empty'].includes(form.conditionOp) && (
-                  <TextField
-                    label="Threshold Value"
-                    type="number"
-                    value={form.threshold}
-                    onChange={(e) => setForm((prev) => ({ ...prev, threshold: e.target.value }))}
-                    fullWidth
-                    size="small"
-                  />
-                )}
-              </Stack>
-
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <TextField
-                  label="Display Threshold Label (optional)"
-                  placeholder="e.g. < 85% or == 0"
-                  value={form.thresholdLabel}
-                  onChange={(e) => setForm((prev) => ({ ...prev, thresholdLabel: e.target.value }))}
-                  fullWidth
-                  size="small"
-                />
-
-                {form.datasourceType === 'victorialogs' && (
-                  <TextField
-                    label="Lookback Window (minutes)"
-                    type="number"
-                    value={form.lookbackMinutes}
-                    onChange={(e) => setForm((prev) => ({ ...prev, lookbackMinutes: e.target.value }))}
-                    fullWidth
-                    size="small"
-                  />
-                )}
-              </Stack>
-
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={form.enabled}
-                    onChange={(e) => setForm((prev) => ({ ...prev, enabled: e.target.checked }))}
-                  />
-                }
-                label="Enable live rule evaluation"
-              />
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setFormOpen(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="contained" disabled={saving}>
-              {saving ? 'Saving...' : form.mode === 'create' ? 'Create Rule' : 'Save Changes'}
-            </Button>
-          </DialogActions>
-        </Box>
-      </Dialog>
-
-      {/* Delete Rule Confirmation Dialog */}
-      <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Delete Alert Rule</DialogTitle>
-        <DialogContent dividers>
-          <Typography variant="body2">
-            Are you sure you want to delete alert rule <strong>{deleteTarget?.name}</strong>?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)} disabled={saving}>
-            Cancel
-          </Button>
-          <Button color="error" variant="contained" onClick={handleDeleteRule} disabled={saving}>
-            {saving ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Inspect Evaluation Dialog */}
-      <Dialog open={Boolean(selectedRule)} onClose={() => setSelectedRule(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>{selectedRule?.name}</DialogTitle>
-        <DialogContent dividers>
-          {selectedRule && (
-            <Stack spacing={1.5}>
-              <Typography variant="body2">
-                <strong>Group:</strong> {selectedRule.group}
-              </Typography>
-              <Typography variant="body2">
-                <strong>Datasource:</strong> {selectedRule.resolvedDatasource} ({selectedRule.datasourceType})
-              </Typography>
-              <Typography variant="body2">
-                <strong>Measured Value:</strong> {selectedRule.measuredValue} (Threshold: {selectedRule.thresholdLabel})
-              </Typography>
-              <Typography variant="body2">
-                <strong>Detail:</strong> {selectedRule.detail}
-              </Typography>
-              <JsonViewer value={selectedRule.query} title="Query Expression" maxHeight={140} />
-              <JsonViewer value={selectedRule} title="Rule & Evaluation Snapshot" maxHeight={280} />
-            </Stack>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setSelectedRule(null)}>Close</Button>
-        </DialogActions>
-      </Dialog>
+      <AlertRuleDialogs
+        suggestedGroups={SUGGESTED_GROUPS}
+        targetOptionsForForm={targetOptionsForForm}
+        formOpen={formOpen}
+        form={form}
+        formError={formError}
+        saving={saving}
+        onCloseForm={() => setFormOpen(false)}
+        onChangeForm={setForm}
+        onSaveRule={handleSaveRule}
+        deleteTarget={deleteTarget}
+        onCloseDelete={() => setDeleteTarget(null)}
+        onConfirmDelete={handleDeleteRule}
+        selectedRule={selectedRule}
+        onCloseInspect={() => setSelectedRule(null)}
+      />
     </Stack>
   );
 }

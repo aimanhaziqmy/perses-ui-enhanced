@@ -1,11 +1,7 @@
 import {
-  Avatar,
   Box,
   Button,
   Chip,
-  CircularProgress,
-  Collapse,
-  Divider,
   Drawer,
   IconButton,
   Stack,
@@ -13,10 +9,11 @@ import {
   Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import { ErrorAlert, ErrorBoundary } from '@perses-dev/components';
 import Logout from 'mdi-material-ui/Logout';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import React, { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import {
   type SiteBrandingConfig,
@@ -32,110 +29,48 @@ import {
   getCurrentPersesUsername,
   getLocalSiteBranding,
   logoutPerses,
-  refreshAuthSession,
+  queryKeys,
   saveClusterSiteBranding,
 } from './api/persesClient';
-import { AlertRulesView } from './components/AlertRulesView';
-import {
-  MoonIcon,
-  NavAlertsIcon,
-  NavExplorerIcon,
-  NavInfraIcon,
-  NavIntegrationsIcon,
-  NavOrgIcon,
-  NavSystemIcon,
-  PersesLogoMark,
-  SidebarCollapseIcon,
-  SunIcon,
-} from './components/BrandIcons';
-import { DashboardsView } from './components/DashboardsView';
-import { DatasourcesView } from './components/DatasourcesView';
-import { ExploreView } from './components/ExploreView';
-import { HostsView } from './components/HostsView';
+import { MoonIcon, SidebarCollapseIcon, SunIcon } from './components/BrandIcons';
 import { LoginView } from './components/LoginView';
-import { LogsExplorerView } from './components/LogsExplorerView';
-import { TracesExplorerView } from './components/TracesExplorerView';
-import { RolesView, SiteSettingsView, SystemAboutView, UsersView } from './components/UsersView';
+import { type NavKey, Sidebar } from './components/Sidebar';
+import { ViewLoadingState } from './components/ViewStates';
 import type { ThemeMode } from './theme/persesTheme';
-import { PALETTE_TOKENS } from './theme/persesTheme';
 
-type NavKey =
-  | 'metrics'
-  | 'logs'
-  | 'traces'
-  | 'dashboards'
-  | 'alerts'
-  | 'events'
-  | 'hosts'
-  | 'datasources'
-  | 'users'
-  | 'roles'
-  | 'settings'
-  | 'about';
-
-interface NavSection {
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  items: Array<{
-    key: NavKey;
-    label: string;
-    path: string;
-  }>;
-}
-
-const NAV_SECTIONS: NavSection[] = [
-  {
-    id: 'explorer',
-    label: 'Explorer',
-    icon: <NavExplorerIcon sx={{ fontSize: 18 }} />,
-    items: [
-      { key: 'metrics', label: 'Metrics', path: '/explore/metrics' },
-      { key: 'logs', label: 'Logs', path: '/explore/logs' },
-      { key: 'traces', label: 'Traces', path: '/explore/traces' },
-      { key: 'dashboards', label: 'Dashboards', path: '/dashboards' },
-    ],
-  },
-  {
-    id: 'alerts',
-    label: 'Alerts & Notifications',
-    icon: <NavAlertsIcon sx={{ fontSize: 18 }} />,
-    items: [
-      { key: 'alerts', label: 'Alert rules', path: '/alerts' },
-      { key: 'events', label: 'Events', path: '/events' },
-    ],
-  },
-  {
-    id: 'infrastructure',
-    label: 'Infrastructure',
-    icon: <NavInfraIcon sx={{ fontSize: 18 }} />,
-    items: [{ key: 'hosts', label: 'Hosts', path: '/hosts' }],
-  },
-  {
-    id: 'integrations',
-    label: 'Integrations',
-    icon: <NavIntegrationsIcon sx={{ fontSize: 18 }} />,
-    items: [{ key: 'datasources', label: 'Data sources', path: '/datasources' }],
-  },
-  {
-    id: 'organization',
-    label: 'Organization',
-    icon: <NavOrgIcon sx={{ fontSize: 18 }} />,
-    items: [
-      { key: 'users', label: 'Users', path: '/users' },
-      { key: 'roles', label: 'Roles', path: '/roles' },
-    ],
-  },
-  {
-    id: 'system',
-    label: 'System',
-    icon: <NavSystemIcon sx={{ fontSize: 18 }} />,
-    items: [
-      { key: 'settings', label: 'Site settings', path: '/settings' },
-      { key: 'about', label: 'About', path: '/about' },
-    ],
-  },
-];
+const DashboardsView = lazy(() =>
+  import('./components/DashboardsView').then((m) => ({ default: m.DashboardsView })),
+);
+const ExploreView = lazy(() =>
+  import('./components/ExploreView').then((m) => ({ default: m.ExploreView })),
+);
+const LogsExplorerView = lazy(() =>
+  import('./components/LogsExplorerView').then((m) => ({ default: m.LogsExplorerView })),
+);
+const TracesExplorerView = lazy(() =>
+  import('./components/TracesExplorerView').then((m) => ({ default: m.TracesExplorerView })),
+);
+const HostsView = lazy(() =>
+  import('./components/HostsView').then((m) => ({ default: m.HostsView })),
+);
+const AlertRulesView = lazy(() =>
+  import('./components/AlertRulesView').then((m) => ({ default: m.AlertRulesView })),
+);
+const DatasourcesView = lazy(() =>
+  import('./components/DatasourcesView').then((m) => ({ default: m.DatasourcesView })),
+);
+const UsersView = lazy(() =>
+  import('./components/UsersView').then((m) => ({ default: m.UsersView })),
+);
+const RolesView = lazy(() =>
+  import('./components/RolesView').then((m) => ({ default: m.RolesView })),
+);
+const SiteSettingsView = lazy(() =>
+  import('./components/SiteSettingsView').then((m) => ({ default: m.SiteSettingsView })),
+);
+const SystemAboutView = lazy(() =>
+  import('./components/SystemAboutView').then((m) => ({ default: m.SystemAboutView })),
+);
 
 const ROUTE_TITLES: Record<NavKey, string> = {
   metrics: 'Metrics explorer',
@@ -167,9 +102,18 @@ function navKeyFromPath(pathname: string): NavKey {
   return 'dashboards';
 }
 
+function RouteView({ children }: { children: React.ReactNode }) {
+  return (
+    <ErrorBoundary FallbackComponent={ErrorAlert}>
+      <Suspense fallback={<ViewLoadingState message="Loading view..." minHeight={320} />}>
+        {children}
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+
 export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onToggleTheme: () => void }) {
-  const muiTheme = useTheme();
-  const tokens = PALETTE_TOKENS[muiTheme.palette.mode];
+  const theme = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -186,14 +130,6 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [branding, setBranding] = useState<SiteBrandingConfig>(() => getLocalSiteBranding());
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    explorer: true,
-    alerts: true,
-    infrastructure: true,
-    integrations: true,
-    organization: true,
-    system: true,
-  });
 
   useEffect(() => {
     applySiteBrandingToDocument(branding);
@@ -209,7 +145,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
-  const toggleFullscreen = async () => {
+  const toggleFullscreen = useCallback(async () => {
     if (!isFullscreen) {
       setIsFullscreen(true);
       try {
@@ -229,23 +165,23 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
         // Ignore exit errors
       }
     }
-  };
+  }, [isFullscreen]);
 
   const { data: config } = useQuery({
-    queryKey: ['perses', 'config'],
+    queryKey: queryKeys.persesConfig,
     queryFn: fetchPersesConfig,
     retry: false,
   });
 
   const { data: health } = useQuery({
-    queryKey: ['perses', 'health'],
+    queryKey: queryKeys.persesHealth,
     queryFn: fetchPersesHealth,
     refetchInterval: 30000,
     retry: false,
   });
 
   const { data: userPermissions } = useQuery({
-    queryKey: ['perses', 'user-permissions', currentUsername],
+    queryKey: queryKeys.userPermissions(currentUsername),
     queryFn: () => fetchUserPermissions(currentUsername),
     enabled: sessionState === 'authenticated' && Boolean(currentUsername) && currentUsername !== 'guest',
     retry: false,
@@ -253,7 +189,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
 
   const isSiteAdmin = canManageSiteSettings(userPermissions);
 
-  const verifySession = async () => {
+  const verifySession = useCallback(async () => {
     setSessionState('checking');
     setAuthError(undefined);
     try {
@@ -267,65 +203,49 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
       if (err instanceof ForbiddenError) {
         setCurrentUsername(getCurrentPersesUsername());
         setSessionState('authenticated');
+        void fetchClusterSiteBranding().then((remote) => {
+          setBranding(remote);
+        });
         return;
       }
       if (err instanceof UnauthorizedError) {
-        const refreshed = await refreshAuthSession();
-        if (refreshed) {
-          try {
-            await fetchProjects();
-            setCurrentUsername(getCurrentPersesUsername());
-            setSessionState('authenticated');
-            void fetchClusterSiteBranding().then((remote) => {
-              setBranding(remote);
-            });
-            return;
-          } catch (refreshErr) {
-            if (refreshErr instanceof ForbiddenError) {
-              setCurrentUsername(getCurrentPersesUsername());
-              setSessionState('authenticated');
-              return;
-            }
-            // Fall through to unauthenticated login view
-          }
-        }
         setSessionState('unauthenticated');
         return;
       }
       setAuthError(err instanceof Error ? err.message : String(err));
       setSessionState('unauthenticated');
     }
-  };
+  }, []);
 
   useEffect(() => {
     void verifySession();
-  }, []);
+  }, [verifySession]);
 
-  const handleSaveBranding = async (next: SiteBrandingConfig) => {
+  const handleSaveBranding = useCallback(async (next: SiteBrandingConfig) => {
     const saved = await saveClusterSiteBranding(next);
     setBranding(saved);
-  };
+  }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     await logoutPerses();
     queryClient.clear();
     setCurrentUsername('guest');
     setSessionState('unauthenticated');
-  };
+  }, [queryClient]);
+
+  const handleNavigate = useCallback(
+    (path: string) => {
+      navigate(path);
+      setMobileMenuOpen(false);
+    },
+    [navigate],
+  );
 
   if (sessionState === 'checking') {
     return (
-      <Stack
-        alignItems="center"
-        justifyContent="center"
-        spacing={2}
-        sx={{ minHeight: '100vh', bgcolor: tokens.bgCanvas }}
-      >
-        <CircularProgress />
-        <Typography variant="body2" color="text.secondary">
-          Connecting to {branding.appName} Backend...
-        </Typography>
-      </Stack>
+      <Box sx={{ minHeight: '100vh', bgcolor: theme.palette.surface.bgCanvas, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <ViewLoadingState message={`Connecting to ${branding.appName} Backend...`} />
+      </Box>
     );
   }
 
@@ -346,232 +266,11 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
   }
 
   const sidebarWidth = sidebarCollapsed ? 64 : 218;
-
-  const renderSidebarContent = (isMobileDrawer: boolean) => {
-    const collapsed = isMobileDrawer ? false : sidebarCollapsed;
-    return (
-      <Box
-        sx={{
-          width: collapsed ? 64 : 218,
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          bgcolor: tokens.bgSidebar,
-          borderRight: `1px solid ${tokens.borderSubtle}`,
-          transition: 'width 0.18s ease',
-        }}
-      >
-        {/* Top-Left Perses Brand Header */}
-        <Box
-          sx={{
-            px: collapsed ? 1.25 : 1.75,
-            height: 52,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'space-between',
-            borderBottom: `1px solid ${tokens.borderSubtle}`,
-          }}
-        >
-          <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
-            onClick={() => {
-              navigate('/dashboards');
-              if (isMobileDrawer) setMobileMenuOpen(false);
-            }}
-            sx={{ cursor: 'pointer', minWidth: 0 }}
-          >
-            <PersesLogoMark size={26} logoUrl={branding.logoUrl} logoText={branding.logoText} />
-            {!collapsed && (
-              <Typography variant="subtitle1" fontWeight={800} letterSpacing="-0.02em" noWrap>
-                {branding.appName}
-              </Typography>
-            )}
-          </Stack>
-
-          {!isMobileDrawer && !collapsed && (
-            <Tooltip title="Collapse navigation">
-              <IconButton size="small" onClick={() => setSidebarCollapsed(true)} sx={{ color: 'text.secondary' }}>
-                <SidebarCollapseIcon collapsed={false} />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Box>
-
-        {!isMobileDrawer && collapsed && (
-          <Stack alignItems="center" sx={{ py: 0.75, borderBottom: `1px solid ${tokens.borderSubtle}` }}>
-            <Tooltip title="Expand navigation">
-              <IconButton size="small" onClick={() => setSidebarCollapsed(false)} sx={{ color: 'text.secondary' }}>
-                <SidebarCollapseIcon collapsed={true} />
-              </IconButton>
-            </Tooltip>
-          </Stack>
-        )}
-
-        {/* Navigation Sections */}
-        <Box sx={{ flex: 1, overflowY: 'auto', px: 1, py: 1.25 }}>
-          {NAV_SECTIONS.map((section) => {
-            const isOpen = openSections[section.id] ?? true;
-            return (
-              <Box key={section.id} sx={{ mb: 0.75 }}>
-                <Box
-                  onClick={() => {
-                    if (collapsed) {
-                      navigate(section.items[0].path);
-                      return;
-                    }
-                    setOpenSections((prev) => ({ ...prev, [section.id]: !isOpen }));
-                  }}
-                  sx={{
-                    px: 1,
-                    py: 0.75,
-                    borderRadius: 1.25,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: collapsed ? 'center' : 'space-between',
-                    cursor: 'pointer',
-                    color: 'text.secondary',
-                    '&:hover': { bgcolor: tokens.bgHover, color: 'text.primary' },
-                  }}
-                >
-                  <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-                    {section.icon}
-                    {!collapsed && (
-                      <Typography variant="caption" fontSize={12.5} fontWeight={600} noWrap>
-                        {section.label}
-                      </Typography>
-                    )}
-                  </Stack>
-                  {!collapsed && (
-                    <Typography variant="caption" fontSize={10} color="text.secondary">
-                      {isOpen ? '⌄' : '›'}
-                    </Typography>
-                  )}
-                </Box>
-
-                {!collapsed && (
-                  <Collapse in={isOpen}>
-                    <Stack spacing={0.25} sx={{ mt: 0.25 }}>
-                      {section.items
-                        .filter((item) => item.key !== 'settings' || isSiteAdmin)
-                        .map((item) => {
-                        const selected = activeKey === item.key;
-                        return (
-                          <Box
-                            key={item.key}
-                            onClick={() => {
-                              navigate(item.path);
-                              if (isMobileDrawer) setMobileMenuOpen(false);
-                            }}
-                            sx={{
-                              pl: 4,
-                              pr: 1.25,
-                              py: 0.7,
-                              borderRadius: 1.25,
-                              cursor: 'pointer',
-                              position: 'relative',
-                              fontSize: 13,
-                              fontWeight: selected ? 600 : 400,
-                              bgcolor: selected ? tokens.bgActiveNav : 'transparent',
-                              color: selected ? 'primary.main' : 'text.secondary',
-                              '&:hover': { bgcolor: selected ? tokens.bgActiveNav : tokens.bgHover },
-                              '&::before': selected
-                                ? {
-                                  content: '""',
-                                  position: 'absolute',
-                                  left: 12,
-                                  top: 7,
-                                  bottom: 7,
-                                  width: 2.5,
-                                  borderRadius: 2,
-                                  bgcolor: 'primary.main',
-                                }
-                                : undefined,
-                            }}
-                          >
-                            {item.label}
-                          </Box>
-                        );
-                      })}
-                    </Stack>
-                  </Collapse>
-                )}
-              </Box>
-            );
-          })}
-        </Box>
-
-        <Divider />
-
-        {/* Bottom User Profile & Theme Toggle */}
-        <Box
-          sx={{
-            p: collapsed ? 1 : 1.5,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'space-between',
-            gap: 1,
-          }}
-        >
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-            <Avatar
-              sx={{
-                width: 28,
-                height: 28,
-                fontSize: 13,
-                fontWeight: 700,
-                bgcolor: 'primary.main',
-                color: '#FFFFFF',
-              }}
-            >
-              {(currentUsername.trim()[0] || '?').toUpperCase()}
-            </Avatar>
-            {!collapsed && (
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="caption" fontWeight={700} display="block" noWrap>
-                  {currentUsername}
-                </Typography>
-                <Typography variant="caption" fontSize={10.5} color="text.secondary" display="block" noWrap>
-                  {branding.orgName}
-                </Typography>
-              </Box>
-            )}
-          </Stack>
-
-          {!collapsed && (
-            <Stack direction="row" spacing={0.25} alignItems="center">
-              {isSiteAdmin && (
-                <Tooltip title="Site settings (Logo, Name, Description)">
-                  <IconButton
-                    size="small"
-                    onClick={() => {
-                      navigate('/settings');
-                      if (isMobileDrawer) setMobileMenuOpen(false);
-                    }}
-                    color={activeKey === 'settings' ? 'primary' : 'inherit'}
-                  >
-                    <NavSystemIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              )}
-              <Tooltip title={`Switch to ${themeMode === 'light' ? 'Dark' : 'Light'} theme`}>
-                <IconButton size="small" onClick={onToggleTheme} color="inherit">
-                  {themeMode === 'light' ? <MoonIcon fontSize="small" /> : <SunIcon fontSize="small" />}
-                </IconButton>
-              </Tooltip>
-            </Stack>
-          )}
-        </Box>
-      </Box>
-    );
-  };
-
   const hideChrome = isEmbedRoute || isFullscreen;
+  const logsInitialQuery = searchParams.get('query') || '*';
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', bgcolor: tokens.bgCanvas }}>
-      {/* Desktop Left Sidebar */}
+    <Box sx={{ minHeight: '100vh', display: 'flex', bgcolor: theme.palette.surface.bgCanvas }}>
       {!hideChrome && (
         <Box
           component="nav"
@@ -584,28 +283,47 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
             height: '100vh',
           }}
         >
-          {renderSidebarContent(false)}
+          <Sidebar
+            activeKey={activeKey}
+            collapsed={sidebarCollapsed}
+            isMobileDrawer={false}
+            branding={branding}
+            currentUsername={currentUsername}
+            isSiteAdmin={isSiteAdmin}
+            themeMode={themeMode}
+            onNavigate={handleNavigate}
+            onToggleCollapse={setSidebarCollapsed}
+            onToggleTheme={onToggleTheme}
+          />
         </Box>
       )}
 
-      {/* Mobile Drawer */}
       {!hideChrome && (
         <Drawer open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)}>
-          {renderSidebarContent(true)}
+          <Sidebar
+            activeKey={activeKey}
+            collapsed={false}
+            isMobileDrawer={true}
+            branding={branding}
+            currentUsername={currentUsername}
+            isSiteAdmin={isSiteAdmin}
+            themeMode={themeMode}
+            onNavigate={handleNavigate}
+            onToggleCollapse={setSidebarCollapsed}
+            onToggleTheme={onToggleTheme}
+          />
         </Drawer>
       )}
 
-      {/* Main Column */}
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        {/* Top Bar (Nightingale compact white/dark header) */}
         {!hideChrome && (
           <Box
             component="header"
             sx={{
               height: 52,
               px: { xs: 1.5, md: 2.5 },
-              bgcolor: tokens.bgHeader,
-              borderBottom: `1px solid ${tokens.borderSubtle}`,
+              bgcolor: theme.palette.surface.bgHeader,
+              borderBottom: `1px solid ${theme.palette.surface.borderSubtle}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -665,33 +383,128 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
           </Box>
         )}
 
-        {/* Active View Workspace */}
         <Box component="main" sx={{ flex: 1, p: isEmbedRoute ? 1 : isFullscreen ? 1.5 : { xs: 1.5, md: 2 }, minHeight: 0 }}>
-          {(activeKey === 'dashboards' || isEmbedRoute) && (
-            <DashboardsView
-              isEmbed={isEmbedRoute}
-              isFullscreen={isFullscreen}
-              onToggleFullscreen={toggleFullscreen}
-            />
+          {isEmbedRoute ? (
+            <RouteView>
+              <DashboardsView
+                isEmbed={true}
+                isFullscreen={isFullscreen}
+                onToggleFullscreen={toggleFullscreen}
+              />
+            </RouteView>
+          ) : (
+            <Routes>
+              <Route
+                path="/dashboards/*"
+                element={
+                  <RouteView>
+                    <DashboardsView
+                      isEmbed={false}
+                      isFullscreen={isFullscreen}
+                      onToggleFullscreen={toggleFullscreen}
+                    />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/explore/metrics/*"
+                element={
+                  <RouteView>
+                    <ExploreView />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/explore/logs/*"
+                element={
+                  <RouteView>
+                    <LogsExplorerView initialQuery={logsInitialQuery} />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/explore/traces/*"
+                element={
+                  <RouteView>
+                    <TracesExplorerView />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/explore/*"
+                element={
+                  <RouteView>
+                    <ExploreView />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/hosts/*"
+                element={
+                  <RouteView>
+                    <HostsView />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/alerts/*"
+                element={
+                  <RouteView>
+                    <AlertRulesView defaultSubTab="rules" />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/events/*"
+                element={
+                  <RouteView>
+                    <AlertRulesView defaultSubTab="events" />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/datasources/*"
+                element={
+                  <RouteView>
+                    <DatasourcesView />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/users/*"
+                element={
+                  <RouteView>
+                    <UsersView />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/roles/*"
+                element={
+                  <RouteView>
+                    <RolesView />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/settings/*"
+                element={
+                  <RouteView>
+                    <SiteSettingsView branding={branding} onSaveBranding={handleSaveBranding} canEdit={isSiteAdmin} />
+                  </RouteView>
+                }
+              />
+              <Route
+                path="/about/*"
+                element={
+                  <RouteView>
+                    <SystemAboutView health={health} config={config} />
+                  </RouteView>
+                }
+              />
+              <Route path="*" element={<Navigate to="/dashboards" replace />} />
+            </Routes>
           )}
-          {activeKey === 'metrics' && <ExploreView />}
-          {activeKey === 'logs' && (
-            <LogsExplorerView
-              key={searchParams.get('query') || '__default'}
-              initialQuery={searchParams.get('query') || '*'}
-            />
-          )}
-          {activeKey === 'traces' && <TracesExplorerView />}
-          {activeKey === 'hosts' && <HostsView />}
-          {activeKey === 'alerts' && <AlertRulesView defaultSubTab="rules" />}
-          {activeKey === 'events' && <AlertRulesView defaultSubTab="events" />}
-          {activeKey === 'datasources' && <DatasourcesView />}
-          {activeKey === 'users' && <UsersView />}
-          {activeKey === 'roles' && <RolesView />}
-          {activeKey === 'settings' && (
-            <SiteSettingsView branding={branding} onSaveBranding={handleSaveBranding} canEdit={isSiteAdmin} />
-          )}
-          {activeKey === 'about' && <SystemAboutView health={health} config={config} />}
         </Box>
       </Box>
     </Box>

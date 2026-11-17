@@ -21,7 +21,6 @@ import {
   TablePagination,
   TableRow,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
@@ -36,8 +35,13 @@ import {
   fetchLiveClusterHosts,
   useDatasourceTargets,
 } from '../api/persesClient';
-import { PALETTE_TOKENS } from '../theme/persesTheme';
 import { OsBadgeIcon } from './BrandIcons';
+import {
+  MiniHistogramCard,
+  PercentRing,
+  VersionDistributionCard,
+  buildUsageHistogram,
+} from './HostCharts';
 
 function formatUptime(seconds: number | null): string {
   if (seconds === null || seconds < 0) return '-';
@@ -60,108 +64,6 @@ function usageColor(pct: number | null): string {
   return '#22C55E';
 }
 
-interface HistogramBucket {
-  label: string;
-  count: number;
-  color: string;
-}
-
-function buildUsageHistogram(values: Array<number | null>): HistogramBucket[] {
-  const counts = [0, 0, 0, 0, 0, 0];
-  for (const v of values) {
-    if (v === null || !Number.isFinite(v)) {
-      counts[0] += 1;
-    } else if (v < 20) {
-      counts[1] += 1;
-    } else if (v < 40) {
-      counts[2] += 1;
-    } else if (v < 60) {
-      counts[3] += 1;
-    } else if (v < 80) {
-      counts[4] += 1;
-    } else {
-      counts[5] += 1;
-    }
-  }
-  return [
-    { label: 'Unknown', count: counts[0], color: '#94A3B8' },
-    { label: '0-20%', count: counts[1], color: '#86EFAC' },
-    { label: '20-40%', count: counts[2], color: '#4ADE80' },
-    { label: '40-60%', count: counts[3], color: '#22C55E' },
-    { label: '60-80%', count: counts[4], color: '#FB923C' },
-    { label: '80%+', count: counts[5], color: '#F87171' },
-  ];
-}
-
-function MiniHistogramCard({ title, buckets }: { title: string; buckets: HistogramBucket[] }) {
-  const maxCount = Math.max(1, ...buckets.map((b) => b.count));
-
-  return (
-    <Card sx={{ height: '100%' }}>
-      <CardContent sx={{ p: 2, '&:last-child': { pb: 1.5 } }}>
-        <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" sx={{ mb: 1.5 }}>
-          {title}
-        </Typography>
-        <Stack direction="row" spacing={1} alignItems="flex-end" sx={{ height: 78, px: 0.5 }}>
-          {buckets.map((bucket) => {
-            const barHeight = bucket.count > 0 ? Math.max(10, Math.round((bucket.count / maxCount) * 44)) : 2;
-            return (
-              <Stack key={bucket.label} alignItems="center" sx={{ flex: 1 }} spacing={0.25}>
-                <Typography variant="caption" fontSize={11} fontWeight={600} color="text.primary">
-                  {bucket.count}
-                </Typography>
-                <Box
-                  sx={{
-                    width: '100%',
-                    maxWidth: 34,
-                    height: barHeight,
-                    borderRadius: '3px 3px 0 0',
-                    bgcolor: bucket.count > 0 ? bucket.color : 'divider',
-                    transition: 'height 0.2s ease',
-                  }}
-                />
-                <Typography variant="caption" fontSize={10} color="text.secondary" noWrap>
-                  {bucket.label}
-                </Typography>
-              </Stack>
-            );
-          })}
-        </Stack>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PercentRing({ pct, color, label }: { pct: number; color: string; label: string }) {
-  const radius = 16;
-  const circumference = 2 * Math.PI * radius;
-  const clamped = Math.max(0, Math.min(100, pct));
-  const offset = circumference - (clamped / 100) * circumference;
-
-  return (
-    <Box sx={{ position: 'relative', width: 42, height: 42, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-      <svg width={42} height={42} viewBox="0 0 42 42">
-        <circle cx={21} cy={21} r={radius} fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth={4} />
-        <circle
-          cx={21}
-          cy={21}
-          r={radius}
-          fill="none"
-          stroke={color}
-          strokeWidth={4}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-          transform="rotate(-90 21 21)"
-        />
-      </svg>
-      <Typography variant="caption" fontSize={10} fontWeight={700} sx={{ position: 'absolute' }}>
-        {label}
-      </Typography>
-    </Box>
-  );
-}
-
 const BUSINESS_GROUPS = [
   'All hosts',
   'Kubernetes Cluster - Core Infrastructure',
@@ -171,9 +73,8 @@ const BUSINESS_GROUPS = [
 ];
 
 export function HostsView() {
-  const muiTheme = useTheme();
-  const mode = muiTheme.palette.mode;
-  const tokens = PALETTE_TOKENS[mode];
+  const theme = useTheme();
+  const mode = theme.palette.mode;
   const navigate = useNavigate();
 
   const {
@@ -341,9 +242,9 @@ export function HostsView() {
                 cursor: 'pointer',
                 fontSize: 13,
                 fontWeight: selectedGroup === 'All hosts' ? 600 : 400,
-                bgcolor: selectedGroup === 'All hosts' ? tokens.bgActiveNav : 'transparent',
+                bgcolor: selectedGroup === 'All hosts' ? theme.palette.surface.bgActiveNav : 'transparent',
                 color: selectedGroup === 'All hosts' ? 'primary.main' : 'text.primary',
-                '&:hover': { bgcolor: tokens.bgHover },
+                '&:hover': { bgcolor: theme.palette.surface.bgHover },
               }}
             >
               All hosts ({hosts.length})
@@ -381,9 +282,9 @@ export function HostsView() {
                       cursor: 'pointer',
                       fontSize: 13,
                       fontWeight: selected ? 600 : 400,
-                      bgcolor: selected ? tokens.bgActiveNav : 'transparent',
+                      bgcolor: selected ? theme.palette.surface.bgActiveNav : 'transparent',
                       color: selected ? 'primary.main' : 'text.secondary',
-                      '&:hover': { bgcolor: tokens.bgHover },
+                      '&:hover': { bgcolor: theme.palette.surface.bgHover },
                     }}
                   >
                     {shortLabel}
@@ -428,7 +329,7 @@ export function HostsView() {
                         flex: 1,
                         p: 1,
                         borderRadius: 1.5,
-                        bgcolor: tokens.bgSubtle,
+                        bgcolor: theme.palette.surface.bgSubtle,
                       }}
                     >
                       <Box>
@@ -450,7 +351,7 @@ export function HostsView() {
                         flex: 1,
                         p: 1,
                         borderRadius: 1.5,
-                        bgcolor: tokens.bgSubtle,
+                        bgcolor: theme.palette.surface.bgSubtle,
                       }}
                     >
                       <Box>
@@ -478,64 +379,7 @@ export function HostsView() {
               <MiniHistogramCard title="CPU usage distribution (hosts)" buckets={cpuBuckets} />
 
               {/* Kubelet / OS Version Distribution */}
-              <Card>
-                <CardContent sx={{ p: 2, '&:last-child': { pb: 1.5 } }}>
-                  <Typography variant="caption" color="text.secondary" fontWeight={600} display="block" sx={{ mb: 1 }}>
-                    Version distribution
-                  </Typography>
-                  <Stack direction="row" alignItems="center" justifyContent="center" spacing={1.5} sx={{ pt: 0.5 }}>
-                    <Tooltip
-                      title={
-                        versionSlices.length > 0
-                          ? versionSlices.map((s) => `${s.version}: ${s.count}`).join(', ')
-                          : 'No data'
-                      }
-                    >
-                      <svg width={76} height={76} viewBox="0 0 76 76">
-                        {versionSlices.length <= 1 ? (
-                          <circle cx={38} cy={38} r={32} fill={versionSlices[0]?.color ?? '#4353FF'} />
-                        ) : (
-                          (() => {
-                            const total = versionSlices.reduce((acc, s) => acc + s.count, 0) || 1;
-                            let offset = 0;
-                            const r = 24;
-                            const c = 2 * Math.PI * r;
-                            return versionSlices.map((slice) => {
-                              const seg = (slice.count / total) * c;
-                              const el = (
-                                <circle
-                                  key={slice.version}
-                                  cx={38}
-                                  cy={38}
-                                  r={r}
-                                  fill="none"
-                                  stroke={slice.color}
-                                  strokeWidth={16}
-                                  strokeDasharray={`${seg} ${c - seg}`}
-                                  strokeDashoffset={-offset}
-                                  transform="rotate(-90 38 38)"
-                                />
-                              );
-                              offset += seg;
-                              return el;
-                            });
-                          })()
-                        )}
-                      </svg>
-                    </Tooltip>
-                    <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-                      {versionSlices.map((slice) => (
-                        <Stack key={slice.version} direction="row" spacing={0.75} alignItems="center">
-                          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: slice.color, flexShrink: 0 }} />
-                          <Typography variant="caption" fontSize={11} noWrap>
-                            {slice.version} ({slice.count})
-                          </Typography>
-                        </Stack>
-                      ))}
-                    </Stack>
-                  </Stack>
-                </CardContent>
-              </Card>
+              <VersionDistributionCard versionSlices={versionSlices} />
             </Box>
           </Collapse>
 
@@ -556,7 +400,7 @@ export function HostsView() {
           <Box
             sx={{
               p: 1.5,
-              borderBottom: `1px solid ${tokens.borderSubtle}`,
+              borderBottom: `1px solid ${theme.palette.surface.borderSubtle}`,
               display: 'flex',
               flexWrap: 'wrap',
               gap: 1.25,
@@ -569,7 +413,7 @@ export function HostsView() {
                 size="small"
                 onClick={() => void refetch()}
                 disabled={isFetching}
-                sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
+                sx={{ border: `1px solid ${theme.palette.surface.borderSubtle}`, borderRadius: 1 }}
               >
                 <Refresh fontSize="small" />
               </IconButton>
@@ -744,7 +588,7 @@ export function HostsView() {
                                 height: 4,
                                 borderRadius: 2,
                                 mt: 0.4,
-                                bgcolor: tokens.bgSubtle,
+                                bgcolor: theme.palette.surface.bgSubtle,
                                 '& .MuiLinearProgress-bar': {
                                   bgcolor: usageColor(host.memoryPct),
                                 },
@@ -771,7 +615,7 @@ export function HostsView() {
                                 height: 4,
                                 borderRadius: 2,
                                 mt: 0.4,
-                                bgcolor: tokens.bgSubtle,
+                                bgcolor: theme.palette.surface.bgSubtle,
                                 '& .MuiLinearProgress-bar': {
                                   bgcolor: usageColor(host.cpuPct),
                                 },

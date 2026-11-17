@@ -20,7 +20,6 @@ import KeyVariant from 'mdi-material-ui/KeyVariant';
 import ShieldAccount from 'mdi-material-ui/ShieldAccount';
 
 import { fetchPersesConfig } from '../api/persesClient';
-import { PALETTE_TOKENS } from '../theme/persesTheme';
 
 type SsoPresetKey = 'keycloak' | 'oidc' | 'google' | 'github';
 
@@ -81,7 +80,6 @@ const SSO_PRESETS: Record<
 
 export function SsoSettingsCard() {
   const theme = useTheme();
-  const tokens = theme.palette.mode === 'dark' ? PALETTE_TOKENS.dark : PALETTE_TOKENS.light;
   const { data: config } = useQuery({
     queryKey: ['perses-config'],
     queryFn: fetchPersesConfig,
@@ -212,8 +210,8 @@ export function SsoSettingsCard() {
             p: 1.75,
             mb: 2.5,
             borderRadius: 1.5,
-            border: `1px solid ${tokens.borderSubtle}`,
-            bgcolor: tokens.bgSubtle,
+            border: `1px solid ${theme.palette.surface.borderSubtle}`,
+            bgcolor: theme.palette.surface.bgSubtle,
           }}
         >
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 1.25 }}>
@@ -254,7 +252,7 @@ export function SsoSettingsCard() {
                     sx={{
                       p: 1.25,
                       borderRadius: 1,
-                      border: `1px solid ${tokens.borderSubtle}`,
+                      border: `1px solid ${theme.palette.surface.borderSubtle}`,
                       bgcolor: theme.palette.background.paper,
                       display: 'flex',
                       flexWrap: 'wrap',
@@ -403,8 +401,8 @@ export function SsoSettingsCard() {
                 m: 0,
                 p: 1.5,
                 borderRadius: 1.25,
-                border: `1px solid ${tokens.borderSubtle}`,
-                bgcolor: tokens.bgSubtle,
+                border: `1px solid ${theme.palette.surface.borderSubtle}`,
+                bgcolor: theme.palette.surface.bgSubtle,
                 fontFamily: 'monospace',
                 fontSize: 12,
                 lineHeight: 1.5,

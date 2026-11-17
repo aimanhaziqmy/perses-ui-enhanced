@@ -1,12 +1,18 @@
 import { CssBaseline, ThemeProvider } from '@mui/material';
 import * as PersesClient from '@perses-dev/client';
+import { FetchProvider } from '@perses-dev/client';
 import * as PersesComponents from '@perses-dev/components';
-import { ChartsProvider, SnackbarProvider } from '@perses-dev/components';
+import { ChartsProvider, ErrorAlert, ErrorBoundary, SnackbarProvider } from '@perses-dev/components';
 import * as PersesDashboards from '@perses-dev/dashboards';
 import { HotkeysProvider } from '@perses-dev/dashboards';
 import * as PersesExplore from '@perses-dev/explore';
 import * as PersesPluginSystem from '@perses-dev/plugin-system';
-import { registerHostSharedModules } from '@perses-dev/plugin-system';
+import {
+  PluginRegistry,
+  ValidationProvider,
+  registerHostSharedModules,
+  remotePluginLoader,
+} from '@perses-dev/plugin-system';
 import * as PersesSpec from '@perses-dev/spec';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React, { useMemo, useState } from 'react';
@@ -16,7 +22,7 @@ import { QueryParamProvider } from 'use-query-params';
 import { ReactRouter6Adapter } from 'use-query-params/adapters/react-router-6';
 
 import { App } from './App';
-import { refreshAuthSession } from './api/persesClient';
+import { persesFetchFn } from './api/persesClient';
 import type { ThemeMode } from './theme/persesTheme';
 import {
   THEME_STORAGE_KEY,
@@ -55,20 +61,6 @@ registerHostSharedModules({
   '@perses-dev/dashboards': toWebpackEsmModule(PersesDashboards),
 });
 
-// Transparent JWT access token refresh on 401
-const originalFetch = globalThis.fetch.bind(globalThis);
-globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const res = await originalFetch(input, init);
-  const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-  if (res.status === 401 && !urlStr.includes('/api/auth/')) {
-    const refreshed = await refreshAuthSession();
-    if (refreshed) {
-      return originalFetch(input, init);
-    }
-  }
-  return res;
-};
-
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -78,6 +70,8 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+const pluginLoader = remotePluginLoader({ baseURL: '', apiPrefix: '' });
 
 function RootApp() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(readStoredThemeMode);
@@ -98,22 +92,36 @@ function RootApp() {
   };
 
   return (
-    <BrowserRouter>
-      <QueryClientProvider client={queryClient}>
-        <QueryParamProvider adapter={ReactRouter6Adapter}>
-          <ThemeProvider theme={muiTheme}>
-            <CssBaseline enableColorScheme={true} />
-            <ChartsProvider chartsTheme={chartsTheme} enablePinning={true}>
-              <SnackbarProvider anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
-                <HotkeysProvider>
-                  <App themeMode={themeMode} onToggleTheme={toggleTheme} />
-                </HotkeysProvider>
-              </SnackbarProvider>
-            </ChartsProvider>
-          </ThemeProvider>
-        </QueryParamProvider>
-      </QueryClientProvider>
-    </BrowserRouter>
+    <ErrorBoundary FallbackComponent={ErrorAlert}>
+      <BrowserRouter>
+        <FetchProvider fetchFn={persesFetchFn}>
+          <QueryClientProvider client={queryClient}>
+            <QueryParamProvider adapter={ReactRouter6Adapter}>
+              <ThemeProvider theme={muiTheme}>
+                <CssBaseline enableColorScheme={true} />
+                <ChartsProvider chartsTheme={chartsTheme} enablePinning={true}>
+                  <SnackbarProvider anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+                    <HotkeysProvider>
+                      <PluginRegistry
+                        pluginLoader={pluginLoader}
+                        defaultPluginKinds={{
+                          Panel: 'TimeSeriesChart',
+                          TimeSeriesQuery: 'PrometheusTimeSeriesQuery',
+                        }}
+                      >
+                        <ValidationProvider>
+                          <App themeMode={themeMode} onToggleTheme={toggleTheme} />
+                        </ValidationProvider>
+                      </PluginRegistry>
+                    </HotkeysProvider>
+                  </SnackbarProvider>
+                </ChartsProvider>
+              </ThemeProvider>
+            </QueryParamProvider>
+          </QueryClientProvider>
+        </FetchProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 

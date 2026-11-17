@@ -21,7 +21,6 @@ import React, { useState } from 'react';
 import type { PersesFrontendConfig, SiteBrandingConfig } from '../api/persesClient';
 import { getLocalSiteBranding, loginNative } from '../api/persesClient';
 import type { ThemeMode } from '../theme/persesTheme';
-import { PALETTE_TOKENS } from '../theme/persesTheme';
 import { MoonIcon, PersesLogoMark, SunIcon } from './BrandIcons';
 
 interface LoginViewProps {
@@ -42,7 +41,6 @@ export function LoginView({
   onAuthenticated,
 }: LoginViewProps) {
   const muiTheme = useTheme();
-  const tokens = PALETTE_TOKENS[muiTheme.palette.mode];
   const branding = brandingProp ?? getLocalSiteBranding();
 
   const [username, setUsername] = useState('');
@@ -83,7 +81,7 @@ export function LoginView({
         alignItems: 'center',
         justifyContent: 'center',
         p: 3,
-        bgcolor: tokens.bgCanvas,
+        bgcolor: muiTheme.palette.surface.bgCanvas,
       }}
     >
       <Card sx={{ width: '100%', maxWidth: 440, p: 1 }}>

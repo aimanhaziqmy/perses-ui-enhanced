@@ -4,22 +4,11 @@ import {
   Button,
   Card,
   CardContent,
-  Checkbox,
   Chip,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  FormControlLabel,
   IconButton,
   InputAdornment,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
-  Tab,
   Table,
   TableBody,
   TableCell,
@@ -27,7 +16,6 @@ import {
   TableHead,
   TablePagination,
   TableRow,
-  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -36,11 +24,9 @@ import { useTheme } from '@mui/material/styles';
 import type { DashboardResource, ProjectResource } from '@perses-dev/client';
 import { ErrorAlert, ErrorBoundary, getResourceDisplayName } from '@perses-dev/components';
 import { ViewDashboard } from '@perses-dev/dashboards';
-import { PluginRegistry, ValidationProvider, remotePluginLoader } from '@perses-dev/plugin-system';
 import ArrowLeft from 'mdi-material-ui/ArrowLeft';
 import ChevronDown from 'mdi-material-ui/ChevronDown';
 import ChevronRight from 'mdi-material-ui/ChevronRight';
-import Check from 'mdi-material-ui/Check';
 import ContentCopy from 'mdi-material-ui/ContentCopy';
 import DeleteOutline from 'mdi-material-ui/DeleteOutline';
 import DownloadOutline from 'mdi-material-ui/DownloadOutline';
@@ -56,6 +42,8 @@ import ShareVariantOutline from 'mdi-material-ui/ShareVariantOutline';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+
+import { DashboardDialogs } from './DashboardDialogs';
 
 import {
   ForbiddenError,
@@ -73,7 +61,6 @@ import {
   updateDashboard,
   usePersesDatasourceApi,
 } from '../api/persesClient';
-import { PALETTE_TOKENS } from '../theme/persesTheme';
 
 export function DashboardsView({
   isEmbed = false,
@@ -85,7 +72,6 @@ export function DashboardsView({
   onToggleFullscreen?: () => void;
 }) {
   const muiTheme = useTheme();
-  const tokens = PALETTE_TOKENS[muiTheme.palette.mode];
   const queryClient = useQueryClient();
   const location = useLocation();
 
@@ -95,7 +81,6 @@ export function DashboardsView({
   const embedDashboard = embedMatch ? decodeURIComponent(embedMatch[2]) : embedSearchParams.get('dashboard') || '';
   const embedPanelKey = isEmbed ? embedSearchParams.get('panel') || '' : '';
 
-  const pluginLoader = useMemo(() => remotePluginLoader({ baseURL: '', apiPrefix: '' }), []);
   const [viewMode, setViewMode] = useState<'list' | 'detail'>(() => (isEmbed ? 'detail' : 'list'));
   const [searchText, setSearchText] = useState<string>('');
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
@@ -226,7 +211,7 @@ export function DashboardsView({
   } = useQuery<DashboardResource, Error>({
     queryKey: ['perses', 'dashboard', selectedProject, selectedDashboardName],
     queryFn: () => fetchDashboard(selectedProject, selectedDashboardName),
-    enabled: Boolean(selectedProject && selectedDashboardName),
+    enabled: (viewMode === 'detail' || isEmbed) && Boolean(selectedProject && selectedDashboardName),
   });
 
   const displayedDashboard = useMemo(() => {
@@ -747,7 +732,7 @@ export function DashboardsView({
             sx={{
               px: 2,
               py: 1.5,
-              borderBottom: `1px solid ${tokens.borderSubtle}`,
+              borderBottom: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
               display: 'flex',
               flexWrap: 'wrap',
               gap: 1.25,
@@ -763,7 +748,7 @@ export function DashboardsView({
                     void queryClient.invalidateQueries({ queryKey: ['perses', 'projects'] });
                     void refetchAllDashboards();
                   }}
-                  sx={{ border: `1px solid ${tokens.borderSubtle}`, borderRadius: 1 }}
+                  sx={{ border: `1px solid ${muiTheme.palette.surface.borderSubtle}`, borderRadius: 1 }}
                 >
                   <Refresh fontSize="small" />
                 </IconButton>
@@ -858,7 +843,7 @@ export function DashboardsView({
                           onClick={() => toggleProjectExpand(pName)}
                           sx={{
                             cursor: 'pointer',
-                            bgcolor: tokens.bgSubtle,
+                            bgcolor: muiTheme.palette.surface.bgSubtle,
                             '& td': { fontWeight: 600 },
                           }}
                         >
@@ -1105,17 +1090,8 @@ export function DashboardsView({
       {displayedDashboard && (
         <Box sx={{ flex: 1, minHeight: 0 }}>
           <ErrorBoundary FallbackComponent={ErrorAlert}>
-            <PluginRegistry
-              pluginLoader={pluginLoader}
-              defaultPluginKinds={{
-                Panel: 'TimeSeriesChart',
-                TimeSeriesQuery: 'PrometheusTimeSeriesQuery',
-              }}
-            >
-              <ValidationProvider>
-                <ErrorBoundary FallbackComponent={ErrorAlert}>
-                  <ViewDashboard
-                    key={`${displayedDashboard.metadata.project}/${displayedDashboard.metadata.name}/${embedPanelKey}`}
+            <ViewDashboard
+              key={`${displayedDashboard.metadata.project}/${displayedDashboard.metadata.name}/${embedPanelKey}`}
                     dashboardResource={displayedDashboard}
                     datasourceApi={datasourceApi}
                     dashboardTitleComponent={
@@ -1168,389 +1144,67 @@ export function DashboardsView({
                     isDatasourceEnabled={!isEmbed}
                     onSave={handleSaveDashboard}
                   />
-                </ErrorBoundary>
-              </ValidationProvider>
-            </PluginRegistry>
           </ErrorBoundary>
         </Box>
       )}
         </>
       )}
 
-      {/* Create Project Dialog */}
-      <Dialog open={createProjOpen} onClose={() => setCreateProjOpen(false)} maxWidth="xs" fullWidth>
-        <Box component="form" onSubmit={handleCreateProject}>
-          <DialogTitle>Create Project</DialogTitle>
-          <DialogContent dividers>
-            <Stack spacing={2}>
-              {projError && <Alert severity="error">{projError}</Alert>}
-              <TextField
-                label="Project ID (metadata.name)"
-                placeholder="e.g. platform-team"
-                value={projName}
-                onChange={(e) => setProjName(e.target.value)}
-                required
-                fullWidth
-                size="small"
-              />
-              <TextField
-                label="Display Name (optional)"
-                placeholder="e.g. Platform Engineering"
-                value={projDisplayName}
-                onChange={(e) => setProjDisplayName(e.target.value)}
-                fullWidth
-                size="small"
-              />
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setCreateProjOpen(false)} disabled={projSaving}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="contained" disabled={projSaving}>
-              {projSaving ? 'Creating...' : 'Create Project'}
-            </Button>
-          </DialogActions>
-        </Box>
-      </Dialog>
-
-      {/* Delete Project Confirmation */}
-      <Dialog open={deleteProjOpen} onClose={() => setDeleteProjOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Delete Project</DialogTitle>
-        <DialogContent dividers>
-          <Typography variant="body2">
-            Are you sure you want to delete project <strong>{selectedProject}</strong> and all dashboards inside it?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteProjOpen(false)} disabled={projSaving}>
-            Cancel
-          </Button>
-          <Button color="error" variant="contained" onClick={handleDeleteProject} disabled={projSaving}>
-            {projSaving ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Create Dashboard Dialog (Blank / Clone / Import JSON) */}
-      <Dialog open={createDashOpen} onClose={() => setCreateDashOpen(false)} maxWidth="sm" fullWidth>
-        <Box component="form" onSubmit={handleCreateDashboard}>
-          <DialogTitle>New Dashboard in &ldquo;{selectedProject}&rdquo;</DialogTitle>
-          <DialogContent dividers>
-            <Stack spacing={2}>
-              <Tabs
-                value={createMode}
-                onChange={(_, v: 'blank' | 'clone' | 'import') => {
-                  setCreateMode(v);
-                  setDashError(null);
-                }}
-                sx={{ borderBottom: `1px solid ${tokens.borderSubtle}` }}
-              >
-                <Tab value="blank" label="Blank" />
-                <Tab value="clone" label="Clone Existing" />
-                <Tab value="import" label="Import JSON" />
-              </Tabs>
-
-              {dashError && <Alert severity="error">{dashError}</Alert>}
-
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <TextField
-                  label="Dashboard ID (metadata.name)"
-                  placeholder="e.g. service-latency"
-                  value={dashName}
-                  onChange={(e) => setDashName(e.target.value)}
-                  required={createMode !== 'import'}
-                  fullWidth
-                  size="small"
-                  helperText={createMode === 'import' ? 'Optional if metadata.name is inside JSON' : undefined}
-                />
-                <TextField
-                  label="Display Name"
-                  placeholder="e.g. Service Latency & Errors"
-                  value={dashDisplayName}
-                  onChange={(e) => setDashDisplayName(e.target.value)}
-                  fullWidth
-                  size="small"
-                />
-              </Stack>
-
-              {createMode === 'clone' && (
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <FormControl size="small" fullWidth>
-                    <InputLabel>Source Project</InputLabel>
-                    <Select
-                      label="Source Project"
-                      value={cloneSourceProject}
-                      onChange={(e) => {
-                        setCloneSourceProject(e.target.value);
-                        setCloneSourceDashboard('');
-                      }}
-                    >
-                      {(projects ?? []).map((p) => (
-                        <MenuItem key={p.metadata.name} value={p.metadata.name}>
-                          {getResourceDisplayName(p)}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-
-                  <FormControl size="small" fullWidth>
-                    <InputLabel>Source Dashboard</InputLabel>
-                    <Select
-                      label="Source Dashboard"
-                      value={cloneSourceDashboard}
-                      onChange={(e) => setCloneSourceDashboard(e.target.value)}
-                    >
-                      {cloneProjectDashboards.map((d) => (
-                        <MenuItem key={d.metadata.name} value={d.metadata.name}>
-                          {getResourceDisplayName(d)}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Stack>
-              )}
-
-              {createMode === 'import' && (
-                <Stack spacing={1.25}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
-                    <Typography variant="caption" color="text.secondary">
-                      Paste a <strong>Perses</strong> or <strong>Grafana</strong> Dashboard JSON document, or upload a{' '}
-                      <code>.json</code> file.
-                    </Typography>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      {detectedImportFormat === 'grafana' && (
-                        <Chip size="small" color="info" variant="outlined" label="Grafana JSON detected" />
-                      )}
-                      {detectedImportFormat === 'perses' && (
-                        <Chip size="small" color="success" variant="outlined" label="Perses JSON detected" />
-                      )}
-                      <Button size="small" variant="outlined" component="label">
-                        Upload .json
-                        <input type="file" hidden accept="application/json,.json" onChange={handleImportFile} />
-                      </Button>
-                    </Stack>
-                  </Stack>
-
-                  {detectedImportFormat === 'grafana' && (
-                    <Alert
-                      severity="info"
-                      action={
-                        <Button
-                          size="small"
-                          color="inherit"
-                          disabled={migratingGrafana || dashSaving}
-                          onClick={() => void handlePreviewMigrateGrafana()}
-                        >
-                          {migratingGrafana ? 'Converting...' : 'Convert & Preview'}
-                        </Button>
-                      }
-                    >
-                      Grafana JSON will be auto-converted via Perses <code>/api/migrate</code>.
-                    </Alert>
-                  )}
-
-                  <TextField
-                    multiline
-                    minRows={6}
-                    maxRows={12}
-                    placeholder='Paste Perses JSON ({"kind": "Dashboard", ...}) or Grafana JSON ({"title": "...", "panels": [...]})'
-                    value={importJsonText}
-                    onChange={(e) => setImportJsonText(e.target.value)}
-                    fullWidth
-                    InputProps={{ sx: { fontFamily: 'monospace', fontSize: 12 } }}
-                  />
-
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        size="small"
-                        checked={useDefaultDatasource}
-                        onChange={(e) => setUseDefaultDatasource(e.target.checked)}
-                      />
-                    }
-                    label={
-                      <Typography variant="caption" color="text.secondary">
-                        Map Grafana panel targets to cluster default Perses datasources when migrating
-                      </Typography>
-                    }
-                  />
-                </Stack>
-              )}
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setCreateDashOpen(false)} disabled={dashSaving}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="contained" disabled={dashSaving}>
-              {dashSaving ? 'Creating...' : 'Create Dashboard'}
-            </Button>
-          </DialogActions>
-        </Box>
-      </Dialog>
-
-      {/* Delete Dashboard Confirmation */}
-      <Dialog open={deleteDashOpen} onClose={() => setDeleteDashOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Delete Dashboard</DialogTitle>
-        <DialogContent dividers>
-          <Typography variant="body2">
-            Are you sure you want to delete dashboard <strong>{selectedDashboardName}</strong> from project{' '}
-            <strong>{selectedProject}</strong>?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDashOpen(false)} disabled={dashSaving}>
-            Cancel
-          </Button>
-          <Button color="error" variant="contained" onClick={handleDeleteDashboard} disabled={dashSaving}>
-            {dashSaving ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-      {/* Share & Embed Modal */}
-      <Dialog open={Boolean(shareTarget)} onClose={() => setShareTarget(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          Share &amp; Embed: {shareTarget ? getResourceDisplayName(shareTarget.dashboard) : ''}
-        </DialogTitle>
-        <DialogContent dividers>
-          {shareTarget && (() => {
-            const panelEntries = Object.entries(shareTarget.dashboard.spec?.panels ?? {});
-            const origin = typeof window !== 'undefined' ? window.location.origin : '';
-            const params = new URLSearchParams();
-            if (shareScope === 'panel' && sharePanelKey) {
-              params.set('panel', sharePanelKey);
-            }
-            if (shareVisibility === 'public') {
-              params.set('public', '1');
-            }
-            const queryStr = params.toString();
-            const embedUrl = `${origin}/embed/projects/${encodeURIComponent(shareTarget.project)}/dashboards/${encodeURIComponent(shareTarget.dashboard.metadata.name)}${queryStr ? `?${queryStr}` : ''}`;
-            const iframeHtml = `<iframe src="${embedUrl}" width="100%" height="${shareScope === 'panel' ? 420 : 680}" frameborder="0" allowfullscreen></iframe>`;
-
-            const copyShare = async (kind: 'url' | 'iframe', text: string) => {
-              try {
-                await navigator.clipboard.writeText(text);
-                setShareCopied(kind);
-                setTimeout(() => setShareCopied((prev) => (prev === kind ? null : prev)), 2000);
-              } catch {
-                // Ignore clipboard errors
-              }
-            };
-
-            return (
-              <Stack spacing={2}>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <FormControl size="small" fullWidth>
-                    <InputLabel id="share-scope-label">Share Scope</InputLabel>
-                    <Select
-                      labelId="share-scope-label"
-                      label="Share Scope"
-                      value={shareScope}
-                      onChange={(e) => setShareScope(e.target.value as 'dashboard' | 'panel')}
-                    >
-                      <MenuItem value="dashboard">Full Dashboard</MenuItem>
-                      <MenuItem value="panel" disabled={panelEntries.length === 0}>
-                        Single Panel {panelEntries.length === 0 ? '(none)' : ''}
-                      </MenuItem>
-                    </Select>
-                  </FormControl>
-
-                  <FormControl size="small" fullWidth>
-                    <InputLabel id="share-vis-label">Access Mode</InputLabel>
-                    <Select
-                      labelId="share-vis-label"
-                      label="Access Mode"
-                      value={shareVisibility}
-                      onChange={(e) => setShareVisibility(e.target.value as 'private' | 'public')}
-                    >
-                      <MenuItem value="private">Private (Requires Login Session)</MenuItem>
-                      <MenuItem value="public">Public (Unauthenticated / Guest Read)</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Stack>
-
-                {shareScope === 'panel' && panelEntries.length > 0 && (
-                  <FormControl size="small" fullWidth>
-                    <InputLabel id="share-panel-label">Select Panel</InputLabel>
-                    <Select
-                      labelId="share-panel-label"
-                      label="Select Panel"
-                      value={sharePanelKey}
-                      onChange={(e) => setSharePanelKey(e.target.value)}
-                    >
-                      {panelEntries.map(([key, panel]) => (
-                        <MenuItem key={key} value={key}>
-                          {panel.spec?.display?.name || key} ({key})
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                )}
-
-                {shareVisibility === 'public' ? (
-                  <Alert severity="info">
-                    Public embeds bypass the login screen. Make sure Perses <code>guest_permissions</code> in Helm{' '}
-                    <code>values.yaml</code> grants <code>read</code> on <code>Dashboard</code>, <code>Datasource</code>,
-                    and <code>GlobalDatasource</code> for unauthenticated visitors.
-                  </Alert>
-                ) : (
-                  <Alert severity="info">
-                    Private embeds reuse the viewer&apos;s Perses/Keycloak browser session. For cross-domain{' '}
-                    <code>&lt;iframe&gt;</code> embeds, set <code>perses.config.security.cookie.same_site: none</code>{' '}
-                    (with HTTPS).
-                  </Alert>
-                )}
-
-                <TextField
-                  label="Embed URL"
-                  size="small"
-                  value={embedUrl}
-                  fullWidth
-                  InputProps={{
-                    readOnly: true,
-                    sx: { fontFamily: 'monospace', fontSize: 12 },
-                    endAdornment: (
-                      <Button
-                        size="small"
-                        startIcon={shareCopied === 'url' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
-                        onClick={() => void copyShare('url', embedUrl)}
-                      >
-                        {shareCopied === 'url' ? 'Copied' : 'Copy'}
-                      </Button>
-                    ),
-                  }}
-                />
-
-                <TextField
-                  label="HTML <iframe> Snippet"
-                  size="small"
-                  value={iframeHtml}
-                  fullWidth
-                  multiline
-                  minRows={2}
-                  InputProps={{
-                    readOnly: true,
-                    sx: { fontFamily: 'monospace', fontSize: 12 },
-                    endAdornment: (
-                      <Button
-                        size="small"
-                        startIcon={shareCopied === 'iframe' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
-                        onClick={() => void copyShare('iframe', iframeHtml)}
-                      >
-                        {shareCopied === 'iframe' ? 'Copied' : 'Copy'}
-                      </Button>
-                    ),
-                  }}
-                />
-              </Stack>
-            );
-          })()}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShareTarget(null)}>Close</Button>
-        </DialogActions>
-      </Dialog>
+      <DashboardDialogs
+        createProjOpen={createProjOpen}
+        onCloseCreateProj={() => setCreateProjOpen(false)}
+        onCreateProject={handleCreateProject}
+        projError={projError}
+        projName={projName}
+        onChangeProjName={setProjName}
+        projDisplayName={projDisplayName}
+        onChangeProjDisplayName={setProjDisplayName}
+        projSaving={projSaving}
+        deleteProjOpen={deleteProjOpen}
+        onCloseDeleteProj={() => setDeleteProjOpen(false)}
+        onDeleteProject={handleDeleteProject}
+        selectedProject={selectedProject}
+        createDashOpen={createDashOpen}
+        onCloseCreateDash={() => setCreateDashOpen(false)}
+        onCreateDashboard={handleCreateDashboard}
+        createMode={createMode}
+        onChangeCreateMode={setCreateMode}
+        dashError={dashError}
+        onClearDashError={() => setDashError(null)}
+        dashName={dashName}
+        onChangeDashName={setDashName}
+        dashDisplayName={dashDisplayName}
+        onChangeDashDisplayName={setDashDisplayName}
+        projects={projects ?? []}
+        cloneSourceProject={cloneSourceProject}
+        onChangeCloneSourceProject={setCloneSourceProject}
+        cloneSourceDashboard={cloneSourceDashboard}
+        onChangeCloneSourceDashboard={setCloneSourceDashboard}
+        cloneProjectDashboards={cloneProjectDashboards}
+        detectedImportFormat={detectedImportFormat}
+        onImportFile={handleImportFile}
+        migratingGrafana={migratingGrafana}
+        onPreviewMigrateGrafana={() => void handlePreviewMigrateGrafana()}
+        importJsonText={importJsonText}
+        onChangeImportJsonText={setImportJsonText}
+        useDefaultDatasource={useDefaultDatasource}
+        onChangeUseDefaultDatasource={setUseDefaultDatasource}
+        dashSaving={dashSaving}
+        deleteDashOpen={deleteDashOpen}
+        onCloseDeleteDash={() => setDeleteDashOpen(false)}
+        onDeleteDashboard={handleDeleteDashboard}
+        selectedDashboardName={selectedDashboardName}
+        shareTarget={shareTarget}
+        onCloseShare={() => setShareTarget(null)}
+        shareScope={shareScope}
+        onChangeShareScope={setShareScope}
+        sharePanelKey={sharePanelKey}
+        onChangeSharePanelKey={setSharePanelKey}
+        shareVisibility={shareVisibility}
+        onChangeShareVisibility={setShareVisibility}
+        shareCopied={shareCopied}
+        onSetShareCopied={setShareCopied}
+      />
     </Stack>
   );
 }
