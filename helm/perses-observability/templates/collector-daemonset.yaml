@@ -34,7 +34,7 @@ spec:
           args:
             - -envflag.enable=true
             - -envflag.prefix=VL_
-            - -remoteWrite.url=http://vl-victoria-logs-single-server:9428
+            - -remoteWrite.url=http://vl-victoria-logs-single-server:9428/insert/native
             - -tmpDataPath=/var/lib/vl-collector
             - -loggerFormat=json
             - -kubernetesCollector=true

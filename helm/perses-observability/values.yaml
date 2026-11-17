@@ -101,6 +101,8 @@ eventExporter:
 # ------------------------------------------------------------------------------
 vmauth:
   enabled: true
+  # Set true only when using VictoriaMetrics Enterprise vmauth (enables src_headers & extra_filters)
+  enterpriseEnabled: false
   image:
     repository: victoriametrics/vmauth
     tag: v1.156.0
@@ -260,7 +262,8 @@ persesAuth:
   encryptionKey: "ChangeMePersesAES256SecretKey32B"
   oidcClientId: "perses"
   oidcClientSecret: "changeme-oidc-client-secret"
-  nativeAdminUsername: "admin"
+  # Use a non-colliding bootstrap username (e.g. local-admin) so OIDC users named "admin" do not collide
+  nativeAdminUsername: "local-admin"
   nativeAdminPassword: "changeme"
 
 persesProvisioning:
@@ -312,6 +315,10 @@ perses:
       configMap:
         name: perses-provisioning
         defaultMode: 420
+    # Optional custom CA bundle for internal OIDC/Keycloak TLS verification:
+    # - name: custom-ca
+    #   configMap:
+    #     name: custom-ca-bundle
   volumeMounts:
     - name: perses-auth-secrets
       mountPath: /etc/perses/secrets
@@ -319,6 +326,12 @@ perses:
     - name: perses-provisioning-manifests
       mountPath: /etc/perses/provisioning
       readOnly: true
+    # - name: custom-ca
+    #   mountPath: /etc/perses/ca
+    #   readOnly: true
+  # envVars:
+  #   - name: SSL_CERT_DIR
+  #     value: /etc/ssl/certs:/etc/perses/ca
   config:
     api_prefix: ""
     security:
@@ -338,6 +351,8 @@ perses:
         providers:
           enable_native: true
           # Optional OAuth/OIDC provider example:
+          # Note: Use client_secret_file (/etc/perses/secrets/client-secret, mounted from perses-auth-secrets)
+          # OR pass PERSES_SECURITY_AUTHENTICATION_PROVIDERS_OAUTH_0_CLIENT_SECRET via envVars — never both.
           # oauth:
           #   - slug_id: sso
           #     name: "SSO Login"
