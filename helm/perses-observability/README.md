@@ -74,3 +74,4 @@ helm upgrade --install observability . \
 | `observabilityUi.enabled` | `true` | Deploy `perses-ui-enhanced` frontend container |
 | `observabilityUi.image.repository` | `ghcr.io/aimanhaziqmy/perses-ui-enhanced` | Custom UI container image repository |
 | `observabilityUi.httpRoute.enabled` | `false` | Create Gateway API `HTTPRoute` for the UI |
+a

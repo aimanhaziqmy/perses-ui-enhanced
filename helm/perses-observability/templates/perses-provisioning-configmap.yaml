@@ -99,6 +99,12 @@ data:
               "kind": "User",
               "name": {{ .Values.persesAuth.nativeAdminUsername | quote }}
             }
+            {{- range .Values.persesAuth.extraAdminUsers }}
+            ,{
+              "kind": "User",
+              "name": {{ . | quote }}
+            }
+            {{- end }}
           ]
         }
       }

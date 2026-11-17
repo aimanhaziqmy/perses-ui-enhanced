@@ -265,6 +265,8 @@ persesAuth:
   # Use a non-colliding bootstrap username (e.g. local-admin) so OIDC users named "admin" do not collide
   nativeAdminUsername: "local-admin"
   nativeAdminPassword: "changeme"
+  # Additional usernames (e.g. OIDC admins like ["admin"]) bound to the admin GlobalRole on every sync
+  extraAdminUsers: []
 
 persesProvisioning:
   # Decoupled user & role bootstrap (01-users.json: native admin user + admin/editor/viewer GlobalRoles).
