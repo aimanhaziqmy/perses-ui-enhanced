@@ -27,10 +27,7 @@ spec:
               app.kubernetes.io/name: k8s-event-exporter
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: victoria-metrics
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: victoriaMetrics-auth
+              app.kubernetes.io/name: victoria-metrics-auth
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: victoria-metrics
