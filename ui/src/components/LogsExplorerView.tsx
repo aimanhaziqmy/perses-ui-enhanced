@@ -44,9 +44,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type {
+  HistogramGroupBy,
   LogLevel,
   LogPresetItem,
   VictoriaLogEntry,
+  VictoriaLogGroupHitBucket,
   VictoriaLogHitBucket,
   VictoriaLogsQueryResult,
 } from '../api/persesClient';
@@ -62,6 +64,7 @@ import {
   hasCustomLimitOrTransformPipe,
   injectLogsQLFilter,
   queryVictoriaLogs,
+  queryVictoriaLogsFieldHistogram,
   queryVictoriaLogsLevelHistogram,
   saveLogPresetsConfig,
   setLocalLogPresets,
@@ -330,6 +333,35 @@ export function LogsExplorerView({
 
   const spanSeconds = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / 1000));
   const stepSeconds = Math.max(1, Math.round(spanSeconds / 50));
+  const [histogramGroupBy, setHistogramGroupBy] = useState<HistogramGroupBy>('level');
+
+  const { data: groupHistogramData } = useQuery<
+    { buckets: VictoriaLogGroupHitBucket[]; seriesKeys: string[] },
+    Error
+  >({
+    queryKey: [
+      'vlogs',
+      'group-histogram',
+      histogramGroupBy,
+      selectedTargetKey,
+      activeTab.id,
+      effectiveQuery,
+      activeTab.rangeMinutes,
+      activeTab.customStartIso ?? '',
+      activeTab.customEndIso ?? '',
+      executedNonce,
+    ],
+    queryFn: () =>
+      queryVictoriaLogsFieldHistogram(
+        effectiveQuery,
+        startDate.toISOString(),
+        endDate.toISOString(),
+        stepSeconds,
+        activeTarget!,
+        histogramGroupBy === 'container' ? 'kubernetes.container_name' : '_stream',
+      ),
+    enabled: Boolean(activeTarget) && histogramGroupBy !== 'level',
+  });
 
   const { data: histogramData } = useQuery<{ buckets: VictoriaLogHitBucket[]; stacked: boolean }, Error>({
     queryKey: [
@@ -431,7 +463,7 @@ export function LogsExplorerView({
     setExecutedNonce((n) => n + 1);
   };
 
-  const handleZoomToBucket = (bucket: VictoriaLogHitBucket) => {
+  const handleZoomToBucket = (bucket: { timestamp: string; endTimestamp: string }) => {
     updateActiveTab({
       customStartIso: bucket.timestamp,
       customEndIso: bucket.endTimestamp,
@@ -935,6 +967,10 @@ export function LogsExplorerView({
           {/* Stacked Level Log Statistics Histogram */}
           <LogsHistogramChart
             buckets={effectiveBuckets}
+            groupBuckets={groupHistogramData?.buckets}
+            groupSeriesKeys={groupHistogramData?.seriesKeys}
+            groupBy={histogramGroupBy}
+            onChangeGroupBy={setHistogramGroupBy}
             levelTotals={levelTotals}
             maxBucketCount={maxBucketCount}
             startLabel={formatFullTs(startDate)}

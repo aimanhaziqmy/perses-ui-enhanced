@@ -405,6 +405,101 @@ export async function queryVictoriaLogsHits(
   });
 }
 
+export type HistogramGroupBy = 'level' | 'container' | 'stream';
+
+export interface VictoriaLogGroupHitBucket {
+  timestamp: string;
+  endTimestamp: string;
+  label: string;
+  count: number;
+  groups: Record<string, number>;
+}
+
+export async function queryVictoriaLogsFieldHistogram(
+  query: string,
+  startIso: string,
+  endIso: string,
+  stepSeconds: number,
+  target: DatasourceTarget | string,
+  field: 'kubernetes.container_name' | '_stream',
+  fieldsLimit = 10,
+): Promise<{ buckets: VictoriaLogGroupHitBucket[]; seriesKeys: string[] }> {
+  const safeStep = Math.max(1, stepSeconds);
+  const params = new URLSearchParams({
+    query: query.trim() || '*',
+    start: startIso,
+    end: endIso,
+    step: `${safeStep}s`,
+    field,
+    fields_limit: String(fieldsLimit),
+  });
+  const basePath = toProxyBasePath(target);
+  const url = `${basePath}/select/logsql/hits?${params.toString()}`;
+  const res = await persesFetchFn(url, {
+    method: 'GET',
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  });
+  if (res.status === 401) {
+    throw new UnauthorizedError('Session expired while fetching VictoriaLogs grouped hits');
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`VictoriaLogs grouped hits HTTP ${res.status}: ${body || res.statusText}`);
+  }
+  const payload = (await res.json()) as {
+    hits?: Array<{ fields?: Record<string, string>; timestamps?: string[]; values?: number[] }>;
+  };
+
+  const bucketsByTs = new Map<string, Record<string, number>>();
+  const totalsByKey = new Map<string, number>();
+
+  for (const series of payload.hits ?? []) {
+    const rawVal = series.fields?.[field]?.trim() || 'other';
+    const key = rawVal === '{}' ? 'other' : rawVal;
+    const tsList = series.timestamps ?? [];
+    const valList = series.values ?? [];
+    for (let i = 0; i < tsList.length; i++) {
+      const ts = tsList[i];
+      const v = valList[i] ?? 0;
+      let bucket = bucketsByTs.get(ts);
+      if (!bucket) {
+        bucket = {};
+        bucketsByTs.set(ts, bucket);
+      }
+      bucket[key] = (bucket[key] ?? 0) + v;
+      totalsByKey.set(key, (totalsByKey.get(key) ?? 0) + v);
+    }
+  }
+
+  const seriesKeys = Array.from(totalsByKey.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => k);
+
+  const sorted = Array.from(bucketsByTs.entries()).sort(([a], [b]) => a.localeCompare(b));
+  const buckets = sorted.map(([timestamp, groups], idx) => {
+    const d = new Date(timestamp);
+    const nextTs = sorted[idx + 1]?.[0];
+    const endDate =
+      nextTs && !Number.isNaN(new Date(nextTs).getTime())
+        ? new Date(nextTs)
+        : new Date(d.getTime() + safeStep * 1000);
+    const label = Number.isNaN(d.getTime())
+      ? timestamp
+      : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const count = Object.values(groups).reduce((sum, n) => sum + n, 0);
+    return {
+      timestamp,
+      endTimestamp: Number.isNaN(endDate.getTime()) ? timestamp : endDate.toISOString(),
+      label,
+      count,
+      groups,
+    };
+  });
+
+  return { buckets, seriesKeys };
+}
+
 function hasUnsupportedHistogramPipe(pipePart: string): boolean {
   if (!pipePart) return false;
   return /\|\s*(stats|limit|top|uniq|count_uniq|histogram|fields|drop|rename|extract|unpack_json|unpack_syslog)\b/i.test(
