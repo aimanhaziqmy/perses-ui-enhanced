@@ -265,7 +265,7 @@ export function LogDetailDrawer({
             </Box>
 
             {drawerTab === 'table' ? (
-              <Table size="small">
+              <Table size="small" sx={{ tableLayout: 'fixed', width: '100%' }}>
                 <TableBody>
                   {Object.entries(selectedEntry)
                     .filter(([k]) => !k.startsWith('_'))
@@ -274,25 +274,31 @@ export function LogDetailDrawer({
                       <TableRow key={k} hover>
                         <TableCell
                           sx={{
-                            width: 190,
+                            width: '38%',
                             fontFamily: 'monospace',
                             fontSize: 12,
                             color: 'text.secondary',
                             verticalAlign: 'top',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'anywhere',
                           }}
                         >
                           {k}
                         </TableCell>
                         <TableCell
                           sx={{
+                            width: '62%',
                             fontFamily: 'monospace',
                             fontSize: 12,
                             wordBreak: 'break-word',
+                            overflowWrap: 'anywhere',
                             whiteSpace: 'pre-wrap',
                           }}
                         >
                           <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between">
-                            <span>{String(v)}</span>
+                            <Box component="span" sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
+                              {String(v)}
+                            </Box>
                             <Tooltip title={`Filter by ${k}:="${String(v)}"`}>
                               <Chip
                                 size="small"
