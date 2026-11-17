@@ -602,8 +602,10 @@ export async function probeDatasource(
   }
 
   if (kind === 'JaegerDatasource') {
-    const url = `${basePath}/api/services`;
-    const res = await globalThis.fetch(url, { credentials: 'include' });
+    let res = await globalThis.fetch(`${basePath}/api/services`, { credentials: 'include' });
+    if (res.status === 404) {
+      res = await globalThis.fetch(`${basePath}/api/v3/services`, { credentials: 'include' });
+    }
     const latencyMs = Math.round(performance.now() - started);
     const text = await res.text();
     if (!res.ok) {
@@ -2646,6 +2648,15 @@ export function normalizeJaegerTrace(raw: RawJaegerTrace): TraceDetail {
     };
   });
 
+  return finalizeTraceDetail(traceId, flatSpans, minStartUs, maxEndUs);
+}
+
+function finalizeTraceDetail(
+  traceId: string,
+  flatSpans: TraceSpan[],
+  minStartUs: number,
+  maxEndUs: number,
+): TraceDetail {
   if (!Number.isFinite(minStartUs)) minStartUs = 0;
   const byId = new Map<string, TraceSpan>();
   const childrenByParent = new Map<string, TraceSpan[]>();
@@ -2699,6 +2710,124 @@ export function normalizeJaegerTrace(raw: RawJaegerTrace): TraceDetail {
   };
 }
 
+interface RawOtlpAttr {
+  key?: string;
+  value?: {
+    stringValue?: string;
+    intValue?: string | number;
+    doubleValue?: number;
+    boolValue?: boolean;
+  };
+}
+
+interface RawOtlpSpan {
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
+  name?: string;
+  startTimeUnixNano?: string | number;
+  endTimeUnixNano?: string | number;
+  attributes?: RawOtlpAttr[];
+  status?: { code?: number | string; message?: string };
+}
+
+export interface RawOtlpResourceSpans {
+  resource?: { attributes?: RawOtlpAttr[] };
+  scopeSpans?: Array<{ spans?: RawOtlpSpan[] }>;
+}
+
+function otlpAttrsToTags(attrs?: RawOtlpAttr[]): TraceTag[] {
+  return (attrs ?? [])
+    .filter((a) => Boolean(a.key))
+    .map((a) => {
+      const v = a.value ?? {};
+      const str =
+        v.stringValue !== undefined
+          ? v.stringValue
+          : v.intValue !== undefined
+            ? String(v.intValue)
+            : v.doubleValue !== undefined
+              ? String(v.doubleValue)
+              : v.boolValue !== undefined
+                ? String(v.boolValue)
+                : '';
+      return { key: String(a.key), value: str };
+    });
+}
+
+export function normalizeOtlpResourceSpans(resourceSpans: RawOtlpResourceSpans[]): TraceDetail[] {
+  const byTrace = new Map<string, { spans: TraceSpan[]; minStartUs: number; maxEndUs: number }>();
+
+  for (const rs of resourceSpans ?? []) {
+    const processTags = otlpAttrsToTags(rs.resource?.attributes);
+    const serviceName = processTags.find((t) => t.key === 'service.name')?.value || 'unknown';
+
+    for (const ss of rs.scopeSpans ?? []) {
+      for (const s of ss.spans ?? []) {
+        const traceId = String(s.traceId ?? '');
+        if (!traceId) continue;
+        const startUs = Math.floor(Number(s.startTimeUnixNano ?? 0) / 1000);
+        const endUs = Math.floor(Number(s.endTimeUnixNano ?? 0) / 1000);
+        const durUs = Math.max(0, endUs - startUs);
+        const tags = otlpAttrsToTags(s.attributes);
+        const statusCode = s.status?.code;
+        const statusErr = statusCode === 2 || String(statusCode ?? '').toUpperCase() === 'STATUS_CODE_ERROR';
+        const hasError =
+          statusErr ||
+          tags.some(
+            (t) =>
+              (t.key === 'error' && t.value === 'true') ||
+              (t.key === 'otel.status_code' && t.value.toUpperCase() === 'ERROR') ||
+              (t.key === 'http.status_code' && Number(t.value) >= 500),
+          );
+
+        let bucket = byTrace.get(traceId);
+        if (!bucket) {
+          bucket = { spans: [], minStartUs: Number.POSITIVE_INFINITY, maxEndUs: 0 };
+          byTrace.set(traceId, bucket);
+        }
+        if (startUs < bucket.minStartUs) bucket.minStartUs = startUs;
+        if (startUs + durUs > bucket.maxEndUs) bucket.maxEndUs = startUs + durUs;
+
+        bucket.spans.push({
+          spanId: String(s.spanId ?? ''),
+          parentSpanId: s.parentSpanId ? String(s.parentSpanId) : undefined,
+          operationName: String(s.name ?? 'unknown'),
+          serviceName,
+          startTimeUs: startUs,
+          durationUs: durUs,
+          relativeStartUs: 0,
+          depth: 0,
+          hasError,
+          tags,
+          processTags,
+        });
+      }
+    }
+  }
+
+  return Array.from(byTrace.entries()).map(([traceId, bucket]) =>
+    finalizeTraceDetail(traceId, bucket.spans, bucket.minStartUs, bucket.maxEndUs),
+  );
+}
+
+export function parseJaegerV3TracesResponse(rawText: string): TraceDetail[] {
+  const allResourceSpans: RawOtlpResourceSpans[] = [];
+  for (const line of rawText.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const chunk = JSON.parse(trimmed) as {
+      result?: { resourceSpans?: RawOtlpResourceSpans[] };
+      resourceSpans?: RawOtlpResourceSpans[];
+    };
+    const rs = chunk.result?.resourceSpans ?? chunk.resourceSpans ?? [];
+    if (Array.isArray(rs) && rs.length > 0) {
+      allResourceSpans.push(...rs);
+    }
+  }
+  return normalizeOtlpResourceSpans(allResourceSpans);
+}
+
 export function buildJaegerSearchParams(params: {
   service?: string;
   operation?: string;
@@ -2734,6 +2863,37 @@ export function buildJaegerSearchParams(params: {
   return qs;
 }
 
+export function buildJaegerV3SearchParams(params: {
+  service?: string;
+  operation?: string;
+  startIso: string;
+  endIso: string;
+  minDuration?: string;
+  maxDuration?: string;
+  tags?: string;
+  limit?: number;
+}): URLSearchParams {
+  const qs = new URLSearchParams();
+  if (params.service) qs.set('query.service_name', params.service);
+  if (params.operation) qs.set('query.operation_name', params.operation);
+  const startDate = new Date(params.startIso);
+  const endDate = new Date(params.endIso);
+  if (!Number.isNaN(startDate.getTime())) qs.set('query.start_time_min', startDate.toISOString());
+  if (!Number.isNaN(endDate.getTime())) qs.set('query.start_time_max', endDate.toISOString());
+  if (params.minDuration?.trim()) qs.set('query.duration_min', params.minDuration.trim());
+  if (params.maxDuration?.trim()) qs.set('query.duration_max', params.maxDuration.trim());
+  if (params.tags?.trim()) {
+    for (const part of params.tags.split(/\s+/)) {
+      const idx = part.indexOf('=');
+      if (idx > 0) {
+        qs.set(`query.attributes[${part.slice(0, idx)}]`, part.slice(idx + 1));
+      }
+    }
+  }
+  qs.set('query.num_traces', String(params.limit ?? 20));
+  return qs;
+}
+
 export async function fetchTraceServices(target: DatasourceTarget): Promise<string[]> {
   const basePath = buildProxyBasePath(target);
   if (target.pluginKind === 'TempoDatasource') {
@@ -2745,6 +2905,13 @@ export async function fetchTraceServices(target: DatasourceTarget): Promise<stri
   }
   const res = await globalThis.fetch(`${basePath}/api/services`, { credentials: 'include' });
   if (res.status === 401) throw new UnauthorizedError('Session expired while loading trace services');
+  if (res.status === 404) {
+    const v3Res = await globalThis.fetch(`${basePath}/api/v3/services`, { credentials: 'include' });
+    if (v3Res.status === 401) throw new UnauthorizedError('Session expired while loading trace services');
+    if (!v3Res.ok) throw new Error(`Jaeger v3 services HTTP ${v3Res.status}: ${await v3Res.text()}`);
+    const v3Payload = (await v3Res.json()) as { services?: string[] };
+    return (v3Payload.services ?? []).filter(Boolean).sort();
+  }
   if (!res.ok) throw new Error(`Jaeger services HTTP ${res.status}: ${await res.text()}`);
   const payload = (await res.json()) as { data?: string[] };
   return (payload.data ?? []).filter(Boolean).sort();
@@ -2757,6 +2924,16 @@ export async function fetchTraceOperations(target: DatasourceTarget, service: st
     credentials: 'include',
   });
   if (res.status === 401) throw new UnauthorizedError('Session expired while loading trace operations');
+  if (res.status === 404) {
+    const v3Res = await globalThis.fetch(
+      `${basePath}/api/v3/operations?service=${encodeURIComponent(service)}`,
+      { credentials: 'include' },
+    );
+    if (v3Res.status === 401) throw new UnauthorizedError('Session expired while loading trace operations');
+    if (!v3Res.ok) return [];
+    const v3Payload = (await v3Res.json()) as { operations?: Array<{ name?: string }> };
+    return Array.from(new Set((v3Payload.operations ?? []).map((o) => o.name ?? '').filter(Boolean))).sort();
+  }
   if (!res.ok) return [];
   const payload = (await res.json()) as { data?: string[] };
   return (payload.data ?? []).filter(Boolean).sort();
@@ -2813,6 +2990,13 @@ export async function searchTraces(
   const qs = buildJaegerSearchParams(params);
   const res = await globalThis.fetch(`${basePath}/api/traces?${qs.toString()}`, { credentials: 'include' });
   if (res.status === 401) throw new UnauthorizedError('Session expired while searching Jaeger traces');
+  if (res.status === 404) {
+    const v3Qs = buildJaegerV3SearchParams(params);
+    const v3Res = await globalThis.fetch(`${basePath}/api/v3/traces?${v3Qs.toString()}`, { credentials: 'include' });
+    if (v3Res.status === 401) throw new UnauthorizedError('Session expired while searching Jaeger traces');
+    if (!v3Res.ok) throw new Error(`Jaeger v3 search HTTP ${v3Res.status}: ${await v3Res.text()}`);
+    return parseJaegerV3TracesResponse(await v3Res.text()).sort((a, b) => b.startTimeUs - a.startTimeUs);
+  }
   if (!res.ok) throw new Error(`Jaeger search HTTP ${res.status}: ${await res.text()}`);
   const payload = (await res.json()) as { data?: RawJaegerTrace[] };
   return (payload.data ?? []).map(normalizeJaegerTrace).sort((a, b) => b.startTimeUs - a.startTimeUs);
@@ -2824,6 +3008,19 @@ export async function fetchTraceById(target: DatasourceTarget, traceId: string):
     credentials: 'include',
   });
   if (res.status === 401) throw new UnauthorizedError('Session expired while loading trace detail');
+  if (res.status === 404) {
+    const v3Res = await globalThis.fetch(`${basePath}/api/v3/traces/${encodeURIComponent(traceId)}`, {
+      credentials: 'include',
+    });
+    if (v3Res.status === 401) throw new UnauthorizedError('Session expired while loading trace detail');
+    if (!v3Res.ok) throw new Error(`Jaeger v3 trace fetch HTTP ${v3Res.status}: ${await v3Res.text()}`);
+    const traces = parseJaegerV3TracesResponse(await v3Res.text());
+    const firstV3 = traces[0];
+    if (!firstV3) {
+      throw new Error(`Trace "${traceId}" not found.`);
+    }
+    return firstV3;
+  }
   if (!res.ok) throw new Error(`Trace fetch HTTP ${res.status}: ${await res.text()}`);
   const payload = (await res.json()) as { data?: RawJaegerTrace[] };
   const first = payload.data?.[0];
