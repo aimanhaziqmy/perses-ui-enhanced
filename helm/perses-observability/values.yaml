@@ -15,12 +15,32 @@ victoriaLogs:
     repository: victoriametrics/victoria-logs
     tag: v1.53.0
     pullPolicy: IfNotPresent
-  retentionPeriod: 7d
+  retentionPeriod: 90d
   persistence:
     enabled: true
     # Leave empty ("") to use the cluster default StorageClass
+    # Size appropriately for 90d retention (e.g. 100Gi+ in production)
     storageClassName: ""
     size: 20Gi
+  archive:
+    enabled: false
+    schedule: "15 2 * * *"
+    lookbackWindow: "24h"
+    image:
+      repository: amazon/aws-cli
+      tag: "2.22.0"
+      pullPolicy: IfNotPresent
+    s3Bucket: ""
+    s3Prefix: "victorialogs-archive"
+    s3Endpoint: ""
+    existingSecret: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
   resources:
     requests:
       cpu: 250m
@@ -50,6 +70,14 @@ collector:
       extraFields: '{"stream":"host_kernel","log_type":"kernel","host":"%{HOSTNAME}","hostname":"%{HOSTNAME}"}'
     - glob: /var/log/syslog
       extraFields: '{"stream":"host_syslog","log_type":"systemd","host":"%{HOSTNAME}","hostname":"%{HOSTNAME}"}'
+    - glob: /var/log/auth.log
+      extraFields: '{"stream":"host_auth","log_type":"auth","host":"%{HOSTNAME}","hostname":"%{HOSTNAME}"}'
+    - glob: /var/log/secure
+      extraFields: '{"stream":"host_auth","log_type":"auth","host":"%{HOSTNAME}","hostname":"%{HOSTNAME}"}'
+  k8sAudit:
+    enabled: false
+    glob: /var/lib/rancher/rke2/server/logs/audit.log
+    extraFields: '{"stream":"k8s_audit","log_type":"k8s_audit","host":"%{HOSTNAME}","hostname":"%{HOSTNAME}"}'
 
 # ------------------------------------------------------------------------------
 # 3. Kubernetes Lifecycle Event Exporter
@@ -69,15 +97,17 @@ eventExporter:
       memory: 256Mi
 
 # ------------------------------------------------------------------------------
-# 4. Multi-Tenant RBAC Auth Proxy (vmauth) - Optional
+# 4. Multi-Tenant RBAC Auth Proxy (vmauth) & NetworkPolicy
 # ------------------------------------------------------------------------------
 vmauth:
-  enabled: false
+  enabled: true
   image:
     repository: victoriametrics/vmauth
     tag: v1.156.0
     pullPolicy: IfNotPresent
   adminPassword: "changeme-vmauth-admin"
+  persesUsername: "perses-readonly"
+  persesPassword: "changeme-perses-vmauth"
   flagsAuthKey: "changeme-flags-auth-key"
   resources:
     requests:
@@ -89,6 +119,9 @@ vmauth:
   tenants:
     - workspace: team-a
     - workspace: team-b
+
+networkPolicy:
+  enabled: true
 
 # ------------------------------------------------------------------------------
 # 5. OIDC Auth Gate (oauth2-proxy for VMUI) - Optional
@@ -301,7 +334,7 @@ perses:
       authentication:
         access_token_ttl: 1h
         refresh_token_ttl: 24h
-        disable_sign_up: false
+        disable_sign_up: true
         providers:
           enable_native: true
           # Optional OAuth/OIDC provider example:
@@ -402,4 +435,42 @@ jaeger:
     limits:
       cpu: 500m
       memory: 1Gi
+  nodeSelector: {}
+
+# ------------------------------------------------------------------------------
+# 11. Continuous Backend Alerting (vmalert + Alertmanager)
+# ------------------------------------------------------------------------------
+vmalert:
+  enabled: true
+  image:
+    repository: victoriametrics/vmalert
+    tag: v1.115.0
+    pullPolicy: IfNotPresent
+  evaluationInterval: 30s
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  nodeSelector: {}
+
+alertmanager:
+  enabled: true
+  image:
+    repository: prom/alertmanager
+    tag: v0.28.1
+    pullPolicy: IfNotPresent
+  receivers:
+    defaultWebhookUrl: ""
+    slackApiUrl: ""
+    slackChannel: "#alerts"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
   nodeSelector: {}

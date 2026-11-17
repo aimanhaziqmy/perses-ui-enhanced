@@ -1,0 +1,63 @@
+{{- if and .Values.vmalert .Values.vmalert.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-vmalert-rules
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+data:
+  rules.yml: |
+    groups:
+      - name: iso27001-logging-security
+        rules:
+          - alert: LogIngestionStopped
+            expr: sum(rate(vl_rows_ingested_total[5m])) == 0
+            for: 5m
+            labels:
+              severity: critical
+              compliance: iso27001-a8.15
+            annotations:
+              summary: "VictoriaLogs ingestion rate dropped to 0"
+              description: "No log rows have been ingested into VictoriaLogs for 5 minutes."
+
+          - alert: VictoriaLogsDown
+            expr: up{job="victorialogs"} == 0
+            for: 2m
+            labels:
+              severity: critical
+              compliance: iso27001-a8.15
+            annotations:
+              summary: "VictoriaLogs target is down"
+              description: "VictoriaLogs scrape target has been unreachable for 2 minutes."
+
+          - alert: PersesBackendDown
+            expr: up{job="perses"} == 0
+            for: 2m
+            labels:
+              severity: critical
+              compliance: iso27001-a8.15
+            annotations:
+              summary: "Perses backend is down"
+              description: "Perses API server target has been unreachable for 2 minutes."
+
+          - alert: ClockDriftHigh
+            expr: abs(node_timex_offset_seconds) > 0.05
+            for: 5m
+            labels:
+              severity: warning
+              compliance: iso27001-a8.17
+            annotations:
+              summary: "Node clock drift exceeds 50ms on {{ "{{" }} $labels.instance {{ "}}" }}"
+              description: "NTP clock offset is {{ "{{" }} $value {{ "}}" }}s, risking audit log timestamp skew."
+
+          - alert: HostRootDiskHighUsage
+            expr: (1 - node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}) > 0.85
+            for: 10m
+            labels:
+              severity: warning
+              compliance: iso27001-a8.15
+            annotations:
+              summary: "Host root filesystem > 85% full on {{ "{{" }} $labels.instance {{ "}}" }}"
+              description: "Disk pressure can interrupt log collection or storage."
+{{- end }}

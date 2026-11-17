@@ -1,0 +1,73 @@
+{{- if and .Values.vmalert .Values.vmalert.enabled }}
+{{- $vmUrl := printf "http://victoria-metrics.%s.svc.cluster.local:8428" .Release.Namespace }}
+{{- if and .Values.subcharts .Values.subcharts.victoriaMetricsEnabled }}
+{{- $vmUrl = printf "http://%s.%s.svc.cluster.local:8428" (default "victoria-metrics" .Values.victoriaMetrics.server.fullnameOverride) .Release.Namespace }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-vmalert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vmalert
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vmalert
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vmalert
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        checksum/rules: {{ include (print $.Template.BasePath "/vmalert-rules-configmap.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.vmalert.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vmalert
+          image: "{{ .Values.vmalert.image.repository }}:{{ .Values.vmalert.image.tag }}"
+          imagePullPolicy: {{ .Values.vmalert.image.pullPolicy }}
+          args:
+            - -rule=/etc/vmalert/rules.yml
+            - -datasource.url={{ $vmUrl }}
+            - -remoteWrite.url={{ $vmUrl }}
+            - -remoteRead.url={{ $vmUrl }}
+            {{- if and .Values.alertmanager .Values.alertmanager.enabled }}
+            - -notifier.url=http://{{ .Release.Name }}-alertmanager.{{ .Release.Namespace }}.svc.cluster.local:9093
+            {{- end }}
+            - -evaluationInterval={{ default "30s" .Values.vmalert.evaluationInterval }}
+            - -httpListenAddr=:8880
+            - -loggerFormat=json
+          ports:
+            - name: http
+              containerPort: 8880
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: rules
+              mountPath: /etc/vmalert
+              readOnly: true
+          resources:
+            {{- toYaml .Values.vmalert.resources | nindent 12 }}
+      volumes:
+        - name: rules
+          configMap:
+            name: {{ .Release.Name }}-vmalert-rules
+{{- end }}

@@ -51,6 +51,11 @@ spec:
             - -fileCollector.glob={{ .glob }}
             - -fileCollector.extraFields={{ .extraFields | quote }}
             {{- end }}
+            {{- if and .Values.collector.k8sAudit .Values.collector.k8sAudit.enabled }}
+            - -fileCollector.glob={{ .Values.collector.k8sAudit.glob }}
+            - -fileCollector.extraFields={{ .Values.collector.k8sAudit.extraFields | quote }}
+            - -fileCollector.msgField=requestURI,message,msg,log
+            {{- end }}
           volumeMounts:
             - name: varlog
               mountPath: /var/log

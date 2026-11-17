@@ -1,0 +1,20 @@
+{{- if and .Values.vmalert .Values.vmalert.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-vmalert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vmalert
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8880
+      targetPort: 8880
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: vmalert
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

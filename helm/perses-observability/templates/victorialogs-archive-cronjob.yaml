@@ -1,0 +1,52 @@
+{{- if and .Values.victoriaLogs.enabled .Values.victoriaLogs.archive .Values.victoriaLogs.archive.enabled }}
+{{- $vlUrl := printf "http://vl-victoria-logs-single-server.%s.svc.cluster.local:9428" .Release.Namespace }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: victorialogs-archive
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.victoriaLogs.archive.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: victorialogs-archive
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: archive
+              image: "{{ .Values.victoriaLogs.archive.image.repository }}:{{ .Values.victoriaLogs.archive.image.tag }}"
+              imagePullPolicy: {{ .Values.victoriaLogs.archive.image.pullPolicy }}
+              command:
+                - /bin/sh
+                - -euo
+                - pipefail
+                - -c
+                - |
+                  STAMP=$(date -u +%Y/%m/%d/%Y%m%dT%H%M%SZ)
+                  OUT="/tmp/vl-${STAMP##*/}.jsonl.gz"
+                  curl -fsS --get "{{ $vlUrl }}/select/logsql/query" \
+                    --data-urlencode "query=_time:{{ .Values.victoriaLogs.archive.lookbackWindow }}" \
+                    | gzip -c > "${OUT}"
+                  DEST="s3://{{ required "victoriaLogs.archive.s3Bucket is required when archive.enabled=true" .Values.victoriaLogs.archive.s3Bucket }}/{{ .Values.victoriaLogs.archive.s3Prefix }}/${STAMP}.jsonl.gz"
+                  {{- if .Values.victoriaLogs.archive.s3Endpoint }}
+                  aws --endpoint-url "{{ .Values.victoriaLogs.archive.s3Endpoint }}" s3 cp "${OUT}" "${DEST}"
+                  {{- else }}
+                  aws s3 cp "${OUT}" "${DEST}"
+                  {{- end }}
+                  rm -f "${OUT}"
+              {{- if .Values.victoriaLogs.archive.existingSecret }}
+              envFrom:
+                - secretRef:
+                    name: {{ .Values.victoriaLogs.archive.existingSecret }}
+              {{- end }}
+              resources:
+                {{- toYaml .Values.victoriaLogs.archive.resources | nindent 16 }}
+{{- end }}

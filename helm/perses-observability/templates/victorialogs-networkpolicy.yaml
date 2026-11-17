@@ -1,0 +1,50 @@
+{{- if and .Values.networkPolicy .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: victorialogs-ingress-lockdown
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: victoria-logs-single
+      app.kubernetes.io/instance: vl
+      app: server
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 9428
+      from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: victoria-logs-collector
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: k8s-event-exporter
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: victoria-metrics
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: victoriaMetrics-auth
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: victoria-metrics
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: victoriaMetrics
+        {{- if and .Values.victoriaLogs .Values.victoriaLogs.archive .Values.victoriaLogs.archive.enabled }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: victorialogs-archive
+        {{- end }}
+        {{- if not .Values.vmauth.enabled }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: perses
+        {{- end }}
+{{- end }}

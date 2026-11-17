@@ -4,7 +4,12 @@
 {{- $vmUrl = printf "http://%s.%s.svc.cluster.local:8428" (default "victoria-metrics" .Values.victoriaMetrics.server.fullnameOverride) .Release.Namespace }}
 {{- end }}
 {{- $vlUrl := .Values.victoriaLogs.serviceUrl }}
-{{- if .Values.victoriaLogs.enabled }}
+{{- $useVmauth := or .Values.vmauth.enabled (ne (default "" .Values.vmauth.externalUrl) "") }}
+{{- if .Values.vmauth.enabled }}
+{{- $vlUrl = printf "http://vmauth-victoria-metrics-auth.%s.svc.cluster.local:8427" .Release.Namespace }}
+{{- else if .Values.vmauth.externalUrl }}
+{{- $vlUrl = .Values.vmauth.externalUrl }}
+{{- else if .Values.victoriaLogs.enabled }}
 {{- $vlUrl = printf "http://vl-victoria-logs-single-server.%s.svc.cluster.local:9428" .Release.Namespace }}
 {{- end }}
 {{- $hasUsers := .Values.persesProvisioning.bootstrapUsers }}
@@ -102,6 +107,20 @@ data:
   {{- if $hasDatasources }}
   02-globaldatasources.json: |
     [
+      {{- if $useVmauth }}
+      {
+        "kind": "GlobalSecret",
+        "metadata": {
+          "name": "vmauth-perses-secret"
+        },
+        "spec": {
+          "basicAuth": {
+            "username": {{ default "perses-readonly" .Values.vmauth.persesUsername | quote }},
+            "password": {{ default "changeme-perses-vmauth" .Values.vmauth.persesPassword | quote }}
+          }
+        }
+      },
+      {{- end }}
       {
         "kind": "GlobalDatasource",
         "metadata": {
@@ -141,7 +160,9 @@ data:
               "proxy": {
                 "kind": "HTTPProxy",
                 "spec": {
-                  "url": {{ $vlUrl | quote }}
+                  "url": {{ $vlUrl | quote }}{{- if $useVmauth }},
+                  "secret": "vmauth-perses-secret"
+                  {{- end }}
                 }
               }
             }
