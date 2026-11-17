@@ -12,7 +12,7 @@ import { useTheme } from '@mui/material/styles';
 import { ErrorAlert, ErrorBoundary } from '@perses-dev/components';
 import Logout from 'mdi-material-ui/Logout';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import {
@@ -20,7 +20,6 @@ import {
   ForbiddenError,
   UnauthorizedError,
   applySiteBrandingToDocument,
-  canManageSiteSettings,
   fetchClusterSiteBranding,
   fetchPersesConfig,
   fetchPersesHealth,
@@ -28,6 +27,7 @@ import {
   fetchUserPermissions,
   getCurrentPersesUsername,
   getLocalSiteBranding,
+  getUiCapabilities,
   logoutPerses,
   queryKeys,
   saveClusterSiteBranding,
@@ -187,7 +187,36 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     retry: false,
   });
 
-  const isSiteAdmin = canManageSiteSettings(userPermissions);
+  const authEnabled = Boolean(config?.security?.enable_auth ?? true) && currentUsername !== 'guest';
+  const capabilities = useMemo(
+    () => getUiCapabilities(userPermissions, authEnabled),
+    [userPermissions, authEnabled],
+  );
+  const isSiteAdmin = capabilities.isSiteAdmin;
+
+  const workspaceContext = useMemo(() => {
+    const urlProject = searchParams.get('project')?.trim() || '';
+    const urlNamespace = searchParams.get('namespace')?.trim() || '';
+    if (urlProject || urlNamespace) {
+      const next = { project: urlProject, namespace: urlNamespace };
+      try {
+        sessionStorage.setItem('perses_workspace_context', JSON.stringify(next));
+      } catch {
+        // Ignore storage errors
+      }
+      return next;
+    }
+    try {
+      const raw = sessionStorage.getItem('perses_workspace_context');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { project?: string; namespace?: string };
+        return { project: parsed.project ?? '', namespace: parsed.namespace ?? '' };
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    return { project: '', namespace: '' };
+  }, [searchParams]);
 
   const verifySession = useCallback(async () => {
     setSessionState('checking');
@@ -290,6 +319,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
             branding={branding}
             currentUsername={currentUsername}
             isSiteAdmin={isSiteAdmin}
+            canManageUsers={capabilities.canManageUsers}
             themeMode={themeMode}
             onNavigate={handleNavigate}
             onToggleCollapse={setSidebarCollapsed}
@@ -307,6 +337,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
             branding={branding}
             currentUsername={currentUsername}
             isSiteAdmin={isSiteAdmin}
+            canManageUsers={capabilities.canManageUsers}
             themeMode={themeMode}
             onNavigate={handleNavigate}
             onToggleCollapse={setSidebarCollapsed}
@@ -402,6 +433,10 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                       isEmbed={false}
                       isFullscreen={isFullscreen}
                       onToggleFullscreen={toggleFullscreen}
+                      defaultProject={workspaceContext.project || undefined}
+                      canCreateProject={capabilities.canCreateProject}
+                      canDeleteProject={capabilities.canDeleteProject}
+                      canManageDashboards={capabilities.canManageDashboards}
                     />
                   </RouteView>
                 }
@@ -410,7 +445,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 path="/explore/metrics/*"
                 element={
                   <RouteView>
-                    <ExploreView />
+                    <ExploreView defaultProject={workspaceContext.project || undefined} />
                   </RouteView>
                 }
               />
@@ -418,7 +453,10 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 path="/explore/logs/*"
                 element={
                   <RouteView>
-                    <LogsExplorerView initialQuery={logsInitialQuery} />
+                    <LogsExplorerView
+                      initialQuery={logsInitialQuery}
+                      lockedNamespace={workspaceContext.namespace || undefined}
+                    />
                   </RouteView>
                 }
               />
@@ -450,7 +488,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 path="/alerts/*"
                 element={
                   <RouteView>
-                    <AlertRulesView defaultSubTab="rules" />
+                    <AlertRulesView defaultSubTab="rules" canEdit={capabilities.canManageAlertRules} />
                   </RouteView>
                 }
               />
@@ -458,7 +496,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 path="/events/*"
                 element={
                   <RouteView>
-                    <AlertRulesView defaultSubTab="events" />
+                    <AlertRulesView defaultSubTab="events" canEdit={capabilities.canManageAlertRules} />
                   </RouteView>
                 }
               />
@@ -466,7 +504,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 path="/datasources/*"
                 element={
                   <RouteView>
-                    <DatasourcesView />
+                    <DatasourcesView canManage={capabilities.canManageDatasources} />
                   </RouteView>
                 }
               />

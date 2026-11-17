@@ -85,7 +85,13 @@ const DEFAULT_FORM: RuleFormState = {
   enabled: true,
 };
 
-export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'rules' | 'backend' | 'events' }) {
+export function AlertRulesView({
+  defaultSubTab = 'rules',
+  canEdit = true,
+}: {
+  defaultSubTab?: 'rules' | 'backend' | 'events';
+  canEdit?: boolean;
+}) {
   const muiTheme = useTheme();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -539,9 +545,11 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
                 sx={{ minWidth: 200, flex: 1, '& .MuiInputBase-input': { fontSize: 13, py: 0.75 } }}
               />
 
-              <Button size="small" variant="contained" startIcon={<Plus />} onClick={openCreateRule}>
-                Add rule
-              </Button>
+              {canEdit && (
+                <Button size="small" variant="contained" startIcon={<Plus />} onClick={openCreateRule}>
+                  Add rule
+                </Button>
+              )}
             </Box>
 
             {allTargets.length === 0 && !loadingTargets && (
@@ -657,6 +665,7 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
                               <Switch
                                 size="small"
                                 color="primary"
+                                disabled={!canEdit}
                                 checked={rule.enabled}
                                 onChange={(e) => void handleToggleRule(rule.rule, e.target.checked)}
                               />
@@ -671,20 +680,24 @@ export function AlertRulesView({ defaultSubTab = 'rules' }: { defaultSubTab?: 'r
                                 >
                                   Inspect
                                 </Button>
-                                <Tooltip title="Edit rule">
-                                  <IconButton size="small" onClick={() => openEditRule(rule.rule)}>
-                                    <PencilOutline fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                                <Tooltip title="Delete rule">
-                                  <IconButton
-                                    size="small"
-                                    color="error"
-                                    onClick={() => setDeleteTarget(rule.rule)}
-                                  >
-                                    <DeleteOutline fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
+                                {canEdit && (
+                                  <>
+                                    <Tooltip title="Edit rule">
+                                      <IconButton size="small" onClick={() => openEditRule(rule.rule)}>
+                                        <PencilOutline fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Delete rule">
+                                      <IconButton
+                                        size="small"
+                                        color="error"
+                                        onClick={() => setDeleteTarget(rule.rule)}
+                                      >
+                                        <DeleteOutline fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </>
+                                )}
                               </Stack>
                             </TableCell>
                           </TableRow>

@@ -111,6 +111,7 @@ export interface SidebarProps {
   branding: SiteBrandingConfig;
   currentUsername: string;
   isSiteAdmin: boolean;
+  canManageUsers?: boolean;
   themeMode: ThemeMode;
   onNavigate: (path: string) => void;
   onToggleCollapse: (collapsed: boolean) => void;
@@ -124,6 +125,7 @@ export const Sidebar = React.memo(function Sidebar({
   branding,
   currentUsername,
   isSiteAdmin,
+  canManageUsers = false,
   themeMode,
   onNavigate,
   onToggleCollapse,
@@ -201,7 +203,7 @@ export const Sidebar = React.memo(function Sidebar({
       )}
 
       <Box sx={{ flex: 1, overflowY: 'auto', px: 1, py: 1.25 }}>
-        {NAV_SECTIONS.map((section) => {
+        {NAV_SECTIONS.filter((section) => section.id !== 'organization' || canManageUsers).map((section) => {
           const isOpen = openSections[section.id] ?? true;
           return (
             <Box key={section.id} sx={{ mb: 0.75 }}>

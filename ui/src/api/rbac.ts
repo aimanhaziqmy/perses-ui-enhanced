@@ -1,9 +1,11 @@
 import type {
+  Action,
   GlobalRoleBindingResource,
   GlobalRoleResource,
   Permission,
   RoleBindingResource,
   RoleResource,
+  Scope,
   UserResource,
 } from '@perses-dev/client';
 
@@ -258,4 +260,69 @@ export function canManageSiteSettings(perms: PersesUserPermissionsMap | undefine
     const coversGlobalVar = p.scopes.includes('*') || p.scopes.includes('GlobalVariable');
     return canWrite && coversGlobalVar;
   });
+}
+
+export function hasPersesPermission(
+  perms: PersesUserPermissionsMap | undefined,
+  actions: Action[],
+  scopes: Scope[],
+  project?: string,
+): boolean {
+  if (!perms) return false;
+  const buckets = [...(perms['*'] ?? [])];
+  if (project && perms[project]) {
+    buckets.push(...perms[project]);
+  }
+  return buckets.some((p) => {
+    const matchesAction = p.actions.includes('*') || actions.some((a) => p.actions.includes(a));
+    const matchesScope = p.scopes.includes('*') || scopes.some((s) => p.scopes.includes(s));
+    return matchesAction && matchesScope;
+  });
+}
+
+export interface UiCapabilities {
+  isSiteAdmin: boolean;
+  canManageUsers: boolean;
+  canCreateProject: boolean;
+  canDeleteProject: (project?: string) => boolean;
+  canManageDashboards: (project?: string) => boolean;
+  canManageDatasources: (project?: string) => boolean;
+  canManageAlertRules: boolean;
+}
+
+export function getUiCapabilities(
+  perms: PersesUserPermissionsMap | undefined,
+  authEnabled: boolean,
+): UiCapabilities {
+  if (!authEnabled) {
+    return {
+      isSiteAdmin: true,
+      canManageUsers: true,
+      canCreateProject: true,
+      canDeleteProject: () => true,
+      canManageDashboards: () => true,
+      canManageDatasources: () => true,
+      canManageAlertRules: true,
+    };
+  }
+  const anyProjectWrite = (scopes: Scope[]) =>
+    Object.keys(perms ?? {}).some((proj) =>
+      hasPersesPermission(perms, ['create', 'update', 'delete'], scopes, proj === '*' ? undefined : proj),
+    );
+
+  return {
+    isSiteAdmin: canManageSiteSettings(perms),
+    canManageUsers: hasPersesPermission(perms, ['read', 'create', 'update', 'delete'], ['User', 'GlobalRole']),
+    canCreateProject: hasPersesPermission(perms, ['create'], ['Project']),
+    canDeleteProject: (project?: string) => hasPersesPermission(perms, ['delete'], ['Project'], project),
+    canManageDashboards: (project?: string) =>
+      project
+        ? hasPersesPermission(perms, ['create', 'update', 'delete'], ['Dashboard'], project)
+        : anyProjectWrite(['Dashboard']),
+    canManageDatasources: (project?: string) =>
+      project
+        ? hasPersesPermission(perms, ['create', 'update', 'delete'], ['Datasource', 'GlobalDatasource'], project)
+        : anyProjectWrite(['Datasource', 'GlobalDatasource']),
+    canManageAlertRules: canManageSiteSettings(perms),
+  };
 }

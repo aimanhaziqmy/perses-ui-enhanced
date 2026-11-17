@@ -142,6 +142,26 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
 ---
 
+## Multi-Tenancy, OIDC Viewer Mode & Workspace Scoping
+
+### 1. Viewer-Only Role (Query & View Without Admin/Write Access)
+All write/admin UI controls are gated by Perses RBAC permissions (`/api/v1/users/{username}/permissions`):
+- **Organization (`Users`, `Roles`)** and **System → Site settings** are hidden from non-admin users.
+- **Dashboards** opens in read-only mode (`isReadonly`), hiding **New project**, **New dashboard**, **Edit**, **Clone**, and **Delete**.
+- **Integrations → Data sources** and **Alerting → Rules** stay read-only, hiding **Add / Edit / Delete** buttons.
+- **Explorer (`Metrics`, `Logs`, `Traces`)** and **Infrastructure (`Hosts`, `Events`)** remain open for querying.
+
+To grant OIDC users Viewer access automatically on first login, either:
+- **Option A (Per-workspace isolation)**: Assign the user a Perses Project `RoleBinding` (e.g. `viewer` role with `read` on `Dashboard`, `Datasource`, `Variable`) on their specific Project under **Organization → Users** (or via Perses API `/api/v1/projects/{project}/rolebindings`).
+- **Option B (Viewer-by-default for all OIDC users)**: Uncomment the `guest_permissions` block in `helm/perses-observability/values.yaml` (`actions: ["read"]`, `scopes: ["Project", "Dashboard", "Datasource", "GlobalDatasource", "Variable"]`).
+
+### 2. Workspace & Namespace URL Scoping (Standalone Docker & Kubernetes)
+- **Standalone Docker / non-Kubernetes**: Works with zero namespace assumptions. Perses **Projects** are the native isolation boundary.
+- **Kubernetes / Portal Integration**: Launching the UI with `?project=<workspace>&namespace=<ns>` (e.g. `/dashboards?project=team-a&namespace=team-a-ns`) pre-selects that Project in **Dashboards** and **Metrics Explorer** and scopes **Logs Explorer** queries with `kubernetes.namespace_name:="<ns>"` for the active browser session.
+- **Hard Data-Plane Tenant Isolation**: URL scoping is a UX filter; for strict multi-tenant metric/log isolation at the data layer, create **Project-scoped Datasources** pointing to tenant-filtered `vmauth` / VictoriaMetrics / VictoriaLogs endpoints rather than sharing a cluster-wide `GlobalDatasource`.
+
+---
+
 ## Building the Custom UI Container
 
 ```bash

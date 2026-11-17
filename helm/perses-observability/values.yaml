@@ -320,6 +320,9 @@ perses:
         guest_permissions:
           - actions: ["read"]
             scopes: ["GlobalVariable"]
+          # Uncomment to grant all authenticated/OIDC users read-only Viewer access (Dashboards + Explorers) automatically:
+          # - actions: ["read"]
+          #   scopes: ["Project", "Dashboard", "Datasource", "GlobalDatasource", "Variable"]
     frontend:
       explorer:
         enable: true

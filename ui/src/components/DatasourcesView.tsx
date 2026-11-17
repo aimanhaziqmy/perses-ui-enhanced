@@ -112,7 +112,12 @@ function buildDatasourceSpec(form: DatasourceFormState): GlobalDatasourceResourc
   };
 }
 
-export function DatasourcesView() {
+export function DatasourcesView({
+  canManage = () => true,
+}: {
+  canManage?: (project?: string) => boolean;
+} = {}) {
+  const canCreateAny = canManage();
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
 
@@ -451,9 +456,11 @@ export function DatasourcesView() {
               {probing ? 'Probing...' : 'Test connectivity'}
             </Button>
 
-            <Button size="small" variant="contained" startIcon={<Plus />} onClick={openCreateModal}>
-              Add data source
-            </Button>
+            {canCreateAny && (
+              <Button size="small" variant="contained" startIcon={<Plus />} onClick={openCreateModal}>
+                Add data source
+              </Button>
+            )}
           </Stack>
         </Box>
 
@@ -480,9 +487,11 @@ export function DatasourcesView() {
                         No data sources configured yet. Add a Prometheus, VictoriaMetrics, or VictoriaLogs data source
                         directly from the UI.
                       </Typography>
-                      <Button size="small" variant="contained" startIcon={<Plus />} onClick={openCreateModal}>
-                        Add first data source
-                      </Button>
+                      {canCreateAny && (
+                        <Button size="small" variant="contained" startIcon={<Plus />} onClick={openCreateModal}>
+                          Add first data source
+                        </Button>
+                      )}
                     </Stack>
                   </TableCell>
                 </TableRow>
@@ -588,16 +597,20 @@ export function DatasourcesView() {
                               </Button>
                             </span>
                           </Tooltip>
-                          <Tooltip title="Edit data source">
-                            <IconButton size="small" onClick={() => openEditModal(item)}>
-                              <PencilOutline fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Delete data source">
-                            <IconButton size="small" color="error" onClick={() => setDeleteTarget(item)}>
-                              <DeleteOutline fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          {canManage(item.scope === 'project' ? item.project : undefined) && (
+                            <>
+                              <Tooltip title="Edit data source">
+                                <IconButton size="small" onClick={() => openEditModal(item)}>
+                                  <PencilOutline fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Delete data source">
+                                <IconButton size="small" color="error" onClick={() => setDeleteTarget(item)}>
+                                  <DeleteOutline fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </>
+                          )}
                         </Stack>
                       </TableCell>
                     </TableRow>

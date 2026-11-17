@@ -66,10 +66,18 @@ export function DashboardsView({
   isEmbed = false,
   isFullscreen = false,
   onToggleFullscreen,
+  defaultProject = '',
+  canCreateProject = true,
+  canDeleteProject = () => true,
+  canManageDashboards = () => true,
 }: {
   isEmbed?: boolean;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  defaultProject?: string;
+  canCreateProject?: boolean;
+  canDeleteProject?: (project?: string) => boolean;
+  canManageDashboards?: (project?: string) => boolean;
 }) {
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
@@ -83,10 +91,12 @@ export function DashboardsView({
 
   const [viewMode, setViewMode] = useState<'list' | 'detail'>(() => (isEmbed ? 'detail' : 'list'));
   const [searchText, setSearchText] = useState<string>('');
-  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>(() =>
+    defaultProject ? { [defaultProject]: true } : {},
+  );
   const [projectPage, setProjectPage] = useState<number>(0);
   const [projectsPerPage, setProjectsPerPage] = useState<number>(10);
-  const [selectedProject, setSelectedProject] = useState<string>(() => embedProject);
+  const [selectedProject, setSelectedProject] = useState<string>(() => embedProject || defaultProject);
   const [selectedDashboardName, setSelectedDashboardName] = useState<string>(() => embedDashboard);
   const [startInEditMode, setStartInEditMode] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'warning' | 'error'; text: string } | null>(null);
@@ -779,26 +789,30 @@ export function DashboardsView({
             </Stack>
 
             <Stack direction="row" spacing={1} alignItems="center">
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<FolderPlusOutline />}
-                onClick={() => {
-                  setProjError(null);
-                  setCreateProjOpen(true);
-                }}
-              >
-                New project
-              </Button>
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={<Plus />}
-                disabled={!projects || projects.length === 0}
-                onClick={() => openCreateInProject(selectedProject || projects?.[0]?.metadata.name || '')}
-              >
-                New dashboard
-              </Button>
+              {canCreateProject && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<FolderPlusOutline />}
+                  onClick={() => {
+                    setProjError(null);
+                    setCreateProjOpen(true);
+                  }}
+                >
+                  New project
+                </Button>
+              )}
+              {canManageDashboards(selectedProject || undefined) && (
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={<Plus />}
+                  disabled={!projects || projects.length === 0}
+                  onClick={() => openCreateInProject(selectedProject || projects?.[0]?.metadata.name || '')}
+                >
+                  New dashboard
+                </Button>
+              )}
             </Stack>
           </Box>
 
@@ -881,23 +895,27 @@ export function DashboardsView({
                           </TableCell>
                           <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                             <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                              <Tooltip title={`New dashboard in "${pName}"`}>
-                                <IconButton size="small" color="primary" onClick={() => openCreateInProject(pName)}>
-                                  <Plus fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title={`Delete project "${pName}"`}>
-                                <IconButton
-                                  size="small"
-                                  color="error"
-                                  onClick={() => {
-                                    setSelectedProject(pName);
-                                    setDeleteProjOpen(true);
-                                  }}
-                                >
-                                  <DeleteOutline fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
+                              {canManageDashboards(pName) && (
+                                <Tooltip title={`New dashboard in "${pName}"`}>
+                                  <IconButton size="small" color="primary" onClick={() => openCreateInProject(pName)}>
+                                    <Plus fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                              {canDeleteProject(pName) && (
+                                <Tooltip title={`Delete project "${pName}"`}>
+                                  <IconButton
+                                    size="small"
+                                    color="error"
+                                    onClick={() => {
+                                      setSelectedProject(pName);
+                                      setDeleteProjOpen(true);
+                                    }}
+                                  >
+                                    <DeleteOutline fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
                             </Stack>
                           </TableCell>
                         </TableRow>
@@ -965,16 +983,20 @@ export function DashboardsView({
                                           <EyeOutline fontSize="small" />
                                         </IconButton>
                                       </Tooltip>
-                                      <Tooltip title="Edit dashboard">
-                                        <IconButton size="small" color="primary" onClick={() => openDashboardDetail(pName, dName, true)}>
-                                          <PencilOutline fontSize="small" />
-                                        </IconButton>
-                                      </Tooltip>
-                                      <Tooltip title="Clone dashboard">
-                                        <IconButton size="small" onClick={() => openCreateInProject(pName, 'clone', dName)}>
-                                          <ContentCopy fontSize="small" />
-                                        </IconButton>
-                                      </Tooltip>
+                                      {canManageDashboards(pName) && (
+                                        <>
+                                          <Tooltip title="Edit dashboard">
+                                            <IconButton size="small" color="primary" onClick={() => openDashboardDetail(pName, dName, true)}>
+                                              <PencilOutline fontSize="small" />
+                                            </IconButton>
+                                          </Tooltip>
+                                          <Tooltip title="Clone dashboard">
+                                            <IconButton size="small" onClick={() => openCreateInProject(pName, 'clone', dName)}>
+                                              <ContentCopy fontSize="small" />
+                                            </IconButton>
+                                          </Tooltip>
+                                        </>
+                                      )}
                                       <Tooltip title="Share / Embed iframe">
                                         <IconButton size="small" onClick={() => openShareModal(pName, dash)}>
                                           <ShareVariantOutline fontSize="small" />
@@ -985,19 +1007,21 @@ export function DashboardsView({
                                           <DownloadOutline fontSize="small" />
                                         </IconButton>
                                       </Tooltip>
-                                      <Tooltip title="Delete dashboard">
-                                        <IconButton
-                                          size="small"
-                                          color="error"
-                                          onClick={() => {
-                                            setSelectedProject(pName);
-                                            setSelectedDashboardName(dName);
-                                            setDeleteDashOpen(true);
-                                          }}
-                                        >
-                                          <DeleteOutline fontSize="small" />
-                                        </IconButton>
-                                      </Tooltip>
+                                      {canManageDashboards(pName) && (
+                                        <Tooltip title="Delete dashboard">
+                                          <IconButton
+                                            size="small"
+                                            color="error"
+                                            onClick={() => {
+                                              setSelectedProject(pName);
+                                              setSelectedDashboardName(dName);
+                                              setDeleteDashOpen(true);
+                                            }}
+                                          >
+                                            <DeleteOutline fontSize="small" />
+                                          </IconButton>
+                                        </Tooltip>
+                                      )}
                                     </Stack>
                                   </TableCell>
                                 </TableRow>
@@ -1138,8 +1162,8 @@ export function DashboardsView({
                     }
                     isInitialVariableSticky={!isEmbed}
                     isAnnotationEnabled={!isEmbed}
-                    isReadonly={isEmbed}
-                    isEditing={isEmbed ? false : startInEditMode}
+                    isReadonly={isEmbed || !canManageDashboards(selectedProject)}
+                    isEditing={isEmbed || !canManageDashboards(selectedProject) ? false : startInEditMode}
                     isVariableEnabled={!isEmbed || !embedPanelKey}
                     isDatasourceEnabled={!isEmbed}
                     onSave={handleSaveDashboard}

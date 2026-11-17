@@ -8,9 +8,9 @@ import { useNavigate } from 'react-router-dom';
 
 import { fetchProjects, queryKeys, useDatasourceTargets, usePersesDatasourceApi } from '../api/persesClient';
 
-export function ExploreView() {
+export function ExploreView({ defaultProject = '' }: { defaultProject?: string }) {
   const navigate = useNavigate();
-  const [projectName, setProjectName] = useState<string>('');
+  const [projectName, setProjectName] = useState<string>(defaultProject);
 
   const { data: projects, error: projectsError } = useQuery<ProjectResource[], Error>({
     queryKey: queryKeys.projects,

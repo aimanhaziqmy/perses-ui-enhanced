@@ -182,7 +182,13 @@ function LevelBadge({ level }: { level: LogLevel }) {
   );
 }
 
-export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string }) {
+export function LogsExplorerView({
+  initialQuery = '*',
+  lockedNamespace,
+}: {
+  initialQuery?: string;
+  lockedNamespace?: string;
+}) {
   const muiTheme = useTheme();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -267,8 +273,13 @@ export function LogsExplorerView({ initialQuery = '*' }: { initialQuery?: string
 
   const effectiveQuery = useMemo(() => {
     const levelExpr = buildLogsQLLevelFilter(activeTab.selectedLevels);
-    return injectLogsQLFilter(activeTab.query, levelExpr);
-  }, [activeTab.query, activeTab.selectedLevels]);
+    let q = injectLogsQLFilter(activeTab.query, levelExpr);
+    if (lockedNamespace) {
+      const escapedNs = lockedNamespace.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      q = injectLogsQLFilter(q, `kubernetes.namespace_name:="${escapedNs}"`);
+    }
+    return q;
+  }, [activeTab.query, activeTab.selectedLevels, lockedNamespace]);
 
   const { startDate, endDate } = useMemo(() => {
     if (activeTab.customStartIso && activeTab.customEndIso) {
