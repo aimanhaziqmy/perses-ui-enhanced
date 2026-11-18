@@ -42,20 +42,7 @@ import {
   VersionDistributionCard,
   buildUsageHistogram,
 } from './HostCharts';
-
-function formatUptime(seconds: number | null): string {
-  if (seconds === null || seconds < 0) return '-';
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  if (days > 0) return `${days}d ${hours}h`;
-  const mins = Math.floor((seconds % 3600) / 60);
-  return `${hours}h ${mins}m`;
-}
-
-function formatGiB(bytes: number | null): string {
-  if (!bytes) return '';
-  return `${(bytes / 1024 ** 3).toFixed(0)} GiB`;
-}
+import { formatBytesIEC, formatDuration, formatPercent } from '../utils/unitFormatter';
 
 function usageColor(pct: number | null): string {
   if (pct === null) return '#94A3B8';
@@ -573,11 +560,11 @@ export function HostsView() {
                           <Box>
                             <Stack direction="row" justifyContent="space-between" alignItems="center">
                               <Typography variant="caption" fontWeight={600}>
-                                {host.memoryPct.toFixed(1)} %
+                                {formatPercent(host.memoryPct)}
                               </Typography>
                               {host.memoryTotalBytes && (
                                 <Typography variant="caption" fontSize={10.5} color="text.secondary">
-                                  {formatGiB(host.memoryTotalBytes)}
+                                  {formatBytesIEC(host.memoryTotalBytes)}
                                 </Typography>
                               )}
                             </Stack>
@@ -606,7 +593,7 @@ export function HostsView() {
                         {host.cpuPct !== null ? (
                           <Box>
                             <Typography variant="caption" fontWeight={600}>
-                              {host.cpuPct.toFixed(1)} %
+                              {formatPercent(host.cpuPct)}
                             </Typography>
                             <LinearProgress
                               variant="determinate"
@@ -633,7 +620,7 @@ export function HostsView() {
                         <Stack direction="row" spacing={0.75} alignItems="center">
                           <Box sx={{ width: 3, height: 14, borderRadius: 1, bgcolor: '#22C55E' }} />
                           <Typography variant="caption" fontWeight={500}>
-                            {formatUptime(host.uptimeSeconds)}
+                            {formatDuration(host.uptimeSeconds, 's')}
                           </Typography>
                         </Stack>
                       </TableCell>

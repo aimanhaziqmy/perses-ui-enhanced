@@ -52,6 +52,8 @@ const TIME_RANGES = [
   { label: 'Last 24 hours', minutes: 1440 },
 ];
 
+import { formatDuration } from '../utils/unitFormatter';
+
 const SERVICE_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#06B6D4', '#8B5CF6', '#14B8A6'];
 
 function serviceColor(service: string): string {
@@ -62,11 +64,7 @@ function serviceColor(service: string): string {
   return SERVICE_COLORS[Math.abs(hash) % SERVICE_COLORS.length];
 }
 
-function formatDurationUs(us: number): string {
-  if (us < 1000) return `${Math.round(us)} µs`;
-  if (us < 1_000_000) return `${(us / 1000).toFixed(2)} ms`;
-  return `${(us / 1_000_000).toFixed(2)} s`;
-}
+const formatDurationUs = (us: number): string => formatDuration(us, 'us');
 
 function formatTraceTime(us: number): string {
   if (!us) return '—';

@@ -368,7 +368,7 @@ data:
                     "yAxis": {
                       "show": true,
                       "format": {
-                        "unit": "decimal",
+                        "unit": "bytes",
                         "shortValues": true
                       }
                     }
@@ -386,7 +386,7 @@ data:
                             "name": "VictoriaMetrics"
                           },
                           "seriesNameFormat": "{{`{{node}} - {{modelName}}`}}",
-                          "query": "DCGM_FI_DEV_FB_USED"
+                          "query": "DCGM_FI_DEV_FB_USED * 1048576"
                         }
                       }
                     }
@@ -406,7 +406,8 @@ data:
                     "calculation": "last-number",
                     "max": 100,
                     "format": {
-                      "unit": "decimal"
+                      "unit": "decimal",
+                      "decimalPlaces": 1
                     },
                     "thresholds": {
                       "steps": [
