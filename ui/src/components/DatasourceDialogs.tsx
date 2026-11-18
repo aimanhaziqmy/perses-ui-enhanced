@@ -21,7 +21,7 @@ import { getResourceDisplayName } from '@perses-dev/components';
 import React from 'react';
 
 import type { DatasourceProbeResult } from '../api/persesClient';
-import { JsonViewer } from './JsonViewer';
+import { JsonViewer } from '@/components/ui/JsonViewer';
 
 export type UnifiedDatasourceItem =
   | { scope: 'global'; key: string; resource: GlobalDatasourceResource }

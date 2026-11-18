@@ -5,7 +5,7 @@ import {
   persesFetchFn,
   saveGlobalJsonConfig,
   toProxyBasePath,
-} from './http';
+} from '@/lib/api/http';
 import { queryVictoriaLogs } from './logs';
 import { parseNumericSample, queryPrometheusInstant } from './metrics';
 

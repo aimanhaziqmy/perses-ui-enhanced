@@ -17,8 +17,8 @@ import {
   apiSendJson,
   persesFetchFn,
   toProxyBasePath,
-} from './http';
-import { queryKeys } from './queryKeys';
+} from '@/lib/api/http';
+import { queryKeys } from '@/lib/api/queryKeys';
 
 export function fetchGlobalDatasources(): Promise<GlobalDatasourceResource[]> {
   return apiGetJson<GlobalDatasourceResource[]>('/api/v1/globaldatasources');

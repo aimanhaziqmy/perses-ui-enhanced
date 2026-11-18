@@ -53,7 +53,7 @@ const TIME_RANGES = [
   { label: 'Last 24 hours', minutes: 1440 },
 ];
 
-import { formatDuration } from '../utils/unitFormatter';
+import { formatDuration } from '@/lib/format/units';
 
 const SERVICE_COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EC4899', '#06B6D4', '#8B5CF6', '#14B8A6'];
 

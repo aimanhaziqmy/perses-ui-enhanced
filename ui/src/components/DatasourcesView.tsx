@@ -48,7 +48,7 @@ import {
   updateGlobalDatasource,
   updateProjectDatasource,
 } from '../api/persesClient';
-import { JaegerBrandIcon, PrometheusBrandIcon, VictoriaLogsBrandIcon } from './BrandIcons';
+import { JaegerBrandIcon, PrometheusBrandIcon, VictoriaLogsBrandIcon } from '@/components/ui/BrandIcons';
 import { DatasourceDialogs, type DatasourceFormState, type UnifiedDatasourceItem } from './DatasourceDialogs';
 
 const DEFAULT_FORM_STATE: DatasourceFormState = {

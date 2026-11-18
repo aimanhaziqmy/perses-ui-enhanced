@@ -42,7 +42,7 @@ describe('RBAC capabilities (M5) and config error propagation (M4)', () => {
     vi.stubGlobal('fetch', fetchMock);
     vi.resetModules();
 
-    const { fetchGlobalJsonConfig } = await import('../http');
+    const { fetchGlobalJsonConfig } = await import('@/lib/api/http');
 
     await expect(
       fetchGlobalJsonConfig('cfg', 'k', (r) => r as { ok: boolean }, { ok: false }),

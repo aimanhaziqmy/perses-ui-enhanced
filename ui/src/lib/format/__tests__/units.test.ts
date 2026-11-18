@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import * as fmt from '../unitFormatter';
+import * as fmt from '../units';
 
 describe('unitFormatter', () => {
   it('formatBytesIEC uses Base-2 1024 with IEC labels', () => {

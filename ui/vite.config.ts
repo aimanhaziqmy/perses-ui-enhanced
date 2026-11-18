@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -23,6 +24,11 @@ function persesWebpackFederationInterop(): Plugin {
 
 export default defineConfig({
   plugins: [react(), persesWebpackFederationInterop()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
+  },
   define: {
     global: 'globalThis',
   },

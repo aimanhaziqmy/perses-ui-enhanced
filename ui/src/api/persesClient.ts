@@ -1,4 +1,4 @@
-export * from './http';
+export * from '@/lib/api/http';
 export * from './auth';
 export * from './dashboards';
 export * from './datasources';
@@ -10,5 +10,5 @@ export * from './alerts';
 export * from './branding';
 export * from './viewPermissions';
 export * from './traces';
-export * from './queryKeys';
+export * from '@/lib/api/queryKeys';
 export * from './workspace';

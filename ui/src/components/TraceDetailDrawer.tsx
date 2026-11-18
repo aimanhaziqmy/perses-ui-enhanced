@@ -29,7 +29,7 @@ import Magnify from 'mdi-material-ui/Magnify';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { TraceDetail, TraceSpan, TraceTag } from '../api/persesClient';
-import { ViewLoadingState } from './ViewStates';
+import { ViewLoadingState } from '@/components/ui/ViewStates';
 
 export interface TraceDetailDrawerProps {
   selectedTraceId: string | null;

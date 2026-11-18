@@ -20,7 +20,7 @@ import { useTheme } from '@mui/material/styles';
 
 import type { LogLevel, VictoriaLogEntry } from '../api/persesClient';
 import { classifyLogLevel } from '../api/persesClient';
-import { JsonViewer } from './JsonViewer';
+import { JsonViewer } from '@/components/ui/JsonViewer';
 import { LOG_LEVEL_META } from './LogsHistogramChart';
 
 function formatDrawerWidth(size: 'small' | 'medium' | 'large'): string {

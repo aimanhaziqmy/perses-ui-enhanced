@@ -22,4 +22,20 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['src/features/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/features/*', '../../*'],
+              message: 'Features must not import from other features; extract shared code to @/lib, @/components/ui, @/hooks, or @/types.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

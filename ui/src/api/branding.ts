@@ -1,4 +1,4 @@
-import { fetchGlobalJsonConfig, saveGlobalJsonConfig } from './http';
+import { fetchGlobalJsonConfig, saveGlobalJsonConfig } from '@/lib/api/http';
 
 export interface SiteBrandingConfig {
   appName: string;

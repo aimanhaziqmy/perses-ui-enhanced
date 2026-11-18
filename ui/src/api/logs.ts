@@ -5,7 +5,7 @@ import {
   persesFetchFn,
   saveGlobalJsonConfig,
   toProxyBasePath,
-} from './http';
+} from '@/lib/api/http';
 import { splitFirstUnquotedPipe } from './workspace';
 
 export type LogLevel = 'error' | 'warning' | 'info' | 'debug' | 'other';

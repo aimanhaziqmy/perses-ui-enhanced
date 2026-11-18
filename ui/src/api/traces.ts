@@ -1,5 +1,5 @@
 import type { DatasourceTarget } from './datasources';
-import { UnauthorizedError, persesFetchFn, toProxyBasePath } from './http';
+import { UnauthorizedError, persesFetchFn, toProxyBasePath } from '@/lib/api/http';
 import { NO_WORKSPACE_SENTINEL, getEnforcedNamespaces } from './workspace';
 
 const TRACE_NAMESPACE_KEYS = new Set([

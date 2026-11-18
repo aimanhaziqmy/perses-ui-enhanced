@@ -21,7 +21,7 @@ import React, { useState } from 'react';
 import type { PersesFrontendConfig, SiteBrandingConfig } from '../api/persesClient';
 import { getLocalSiteBranding, loginNative } from '../api/persesClient';
 import type { ThemeMode } from '../theme/persesTheme';
-import { MoonIcon, PersesLogoMark, SunIcon } from './BrandIcons';
+import { MoonIcon, PersesLogoMark, SunIcon } from '@/components/ui/BrandIcons';
 
 interface LoginViewProps {
   config: PersesFrontendConfig | undefined;

@@ -9,7 +9,7 @@ import type {
   UserResource,
 } from '@perses-dev/client';
 
-import { apiDelete, apiGetJson, apiSendJson } from './http';
+import { apiDelete, apiGetJson, apiSendJson } from '@/lib/api/http';
 
 export type PersesUserResource = UserResource;
 export type PersesPermission = Permission;

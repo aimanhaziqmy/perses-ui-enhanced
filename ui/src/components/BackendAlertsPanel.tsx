@@ -31,7 +31,7 @@ import {
   queryKeys,
   useDatasourceTargets,
 } from '../api/persesClient';
-import { ViewEmptyState, ViewLoadingState } from './ViewStates';
+import { ViewEmptyState, ViewLoadingState } from '@/components/ui/ViewStates';
 
 export function BackendAlertsPanel() {
   const theme = useTheme();

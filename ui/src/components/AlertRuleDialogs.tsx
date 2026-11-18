@@ -25,7 +25,7 @@ import type {
   LiveAlertRuleEvaluation,
 } from '../api/persesClient';
 import { datasourceTargetKey } from '../api/persesClient';
-import { JsonViewer } from './JsonViewer';
+import { JsonViewer } from '@/components/ui/JsonViewer';
 
 export interface RuleFormState {
   mode: 'create' | 'edit';

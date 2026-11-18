@@ -17,7 +17,7 @@ import React, { useEffect, useState } from 'react';
 
 import type { RoleViewPermissionsConfig, SiteBrandingConfig } from '../api/persesClient';
 import { DEFAULT_ROLE_VIEW_PERMISSIONS, DEFAULT_SITE_BRANDING } from '../api/persesClient';
-import { PersesLogoMark } from './BrandIcons';
+import { PersesLogoMark } from '@/components/ui/BrandIcons';
 import { RoleViewPermissionsCard } from './RoleViewPermissionsCard';
 import { SsoSettingsCard } from './SsoSettingsCard';
 

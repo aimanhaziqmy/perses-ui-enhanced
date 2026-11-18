@@ -1,6 +1,6 @@
 import type { GlobalRoleBindingResource } from '@perses-dev/client';
 
-import { fetchGlobalJsonConfig, saveGlobalJsonConfig } from './http';
+import { fetchGlobalJsonConfig, saveGlobalJsonConfig } from '@/lib/api/http';
 
 export type AppViewKey =
   | 'dashboards'

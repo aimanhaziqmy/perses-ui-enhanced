@@ -26,7 +26,7 @@ import {
   PersesLogoMark,
   SidebarCollapseIcon,
   SunIcon,
-} from './BrandIcons';
+} from '@/components/ui/BrandIcons';
 
 export type NavKey =
   | 'metrics'

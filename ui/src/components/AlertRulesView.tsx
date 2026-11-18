@@ -57,8 +57,8 @@ import {
   saveAlertRulesConfig,
   useDatasourceTargets,
 } from '../api/persesClient';
-import type { ExportFormat } from '../utils/exportRecords';
-import { exportRecordsToFile } from '../utils/exportRecords';
+import type { ExportFormat } from '@/lib/export/exportRecords';
+import { exportRecordsToFile } from '@/lib/export/exportRecords';
 import { AlertRuleDialogs, type RuleFormState } from './AlertRuleDialogs';
 import { BackendAlertsPanel } from './BackendAlertsPanel';
 

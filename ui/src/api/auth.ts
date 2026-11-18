@@ -1,6 +1,6 @@
 import { fetchJson } from '@perses-dev/client';
 
-import { apiGetJson, persesFetchFn } from './http';
+import { apiGetJson, persesFetchFn } from '@/lib/api/http';
 
 export interface PersesHealthResponse {
   buildTime?: string;

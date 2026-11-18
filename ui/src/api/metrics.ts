@@ -1,5 +1,5 @@
 import type { DatasourceTarget } from './datasources';
-import { UnauthorizedError, persesFetchFn, toProxyBasePath } from './http';
+import { UnauthorizedError, persesFetchFn, toProxyBasePath } from '@/lib/api/http';
 
 export interface PrometheusVectorSample {
   metric: Record<string, string>;

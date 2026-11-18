@@ -1,6 +1,6 @@
 import type { DashboardResource, ProjectResource } from '@perses-dev/client';
 
-import { apiDelete, apiGetJson, apiSendJson } from './http';
+import { apiDelete, apiGetJson, apiSendJson } from '@/lib/api/http';
 
 export function fetchProjects(): Promise<ProjectResource[]> {
   return apiGetJson<ProjectResource[]>('/api/v1/projects');

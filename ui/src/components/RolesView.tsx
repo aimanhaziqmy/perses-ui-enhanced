@@ -58,7 +58,7 @@ import {
   updatePersesGlobalRole,
   updateProjectRole,
 } from '../api/persesClient';
-import { ViewLoadingState } from './ViewStates';
+import { ViewLoadingState } from '@/components/ui/ViewStates';
 
 const AVAILABLE_ACTIONS = Array.from(new Set(['*', ...ACTIONS])) as Action[];
 const AVAILABLE_PROJECT_SCOPES = Array.from(new Set(['*', ...PROJECT_SCOPES])) as Scope[];

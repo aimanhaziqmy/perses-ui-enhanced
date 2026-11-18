@@ -78,9 +78,9 @@ import {
   toFlatLogRecord,
   useDatasourceTargets,
 } from '../api/persesClient';
-import type { ExportFormat } from '../utils/exportRecords';
-import { exportRawJsonlLinesToFile, exportRecordsToFile } from '../utils/exportRecords';
-import { VictoriaLogsBrandIcon } from './BrandIcons';
+import type { ExportFormat } from '@/lib/export/exportRecords';
+import { exportRawJsonlLinesToFile, exportRecordsToFile } from '@/lib/export/exportRecords';
+import { VictoriaLogsBrandIcon } from '@/components/ui/BrandIcons';
 import { LogDetailDrawer } from './LogDetailDrawer';
 import { LogsHistogramChart } from './LogsHistogramChart';
 

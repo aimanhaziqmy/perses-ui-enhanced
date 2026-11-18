@@ -36,14 +36,14 @@ import {
   queryKeys,
   useDatasourceTargets,
 } from '../api/persesClient';
-import { OsBadgeIcon } from './BrandIcons';
+import { OsBadgeIcon } from '@/components/ui/BrandIcons';
 import {
   MiniHistogramCard,
   PercentRing,
   VersionDistributionCard,
   buildUsageHistogram,
 } from './HostCharts';
-import { formatBytesIEC, formatDuration, formatPercent } from '../utils/unitFormatter';
+import { formatBytesIEC, formatDuration, formatPercent } from '@/lib/format/units';
 
 function usageColor(pct: number | null): string {
   if (pct === null) return '#94A3B8';

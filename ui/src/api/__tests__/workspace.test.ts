@@ -9,7 +9,7 @@ import {
   setEnforcedNamespaces,
   splitFirstUnquotedPipe,
 } from '../workspace';
-import { queryKeys } from '../queryKeys';
+import { queryKeys } from '@/lib/api/queryKeys';
 
 describe('workspace isolation', () => {
   it('splitFirstUnquotedPipe handles unquoted, single/double-quoted, and escaped pipes', () => {

@@ -52,10 +52,10 @@ import {
   setEnforcedNamespaces,
 } from './api/persesClient';
 import { getLocalSiteBranding } from './api/persesClient';
-import { MoonIcon, SidebarCollapseIcon, SunIcon } from './components/BrandIcons';
+import { MoonIcon, SidebarCollapseIcon, SunIcon } from '@/components/ui/BrandIcons';
 import { LoginView } from './components/LoginView';
 import { type NavKey, Sidebar } from './components/Sidebar';
-import { ViewForbiddenState, ViewLoadingState } from './components/ViewStates';
+import { ViewForbiddenState, ViewLoadingState } from '@/components/ui/ViewStates';
 import type { ThemeMode } from './theme/persesTheme';
 
 const DashboardsView = lazy(() =>
