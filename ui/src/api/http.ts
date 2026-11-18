@@ -143,6 +143,7 @@ export async function fetchGlobalJsonConfig<T>(
   storageKey: string,
   normalize: (raw: unknown) => T,
   fallback: T,
+  options?: { allowUnauthorizedFallback?: boolean },
 ): Promise<T> {
   let localVal = fallback;
   try {
@@ -154,28 +155,31 @@ export async function fetchGlobalJsonConfig<T>(
     localVal = fallback;
   }
 
-  try {
-    const res = await persesFetchFn(`/api/v1/globalvariables/${encodeURIComponent(varName)}`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) {
-      return localVal;
-    }
-    const payload = (await res.json()) as GlobalVariableResource;
-    const rawValue = payload?.spec?.kind === 'TextVariable' ? payload.spec.spec?.value : undefined;
-    if (!rawValue) return localVal;
-    const normalized = normalize(JSON.parse(rawValue));
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(normalized));
-    } catch {
-      // Ignore storage quota errors
-    }
-    return normalized;
-  } catch {
+  const endpoint = `/api/v1/globalvariables/${encodeURIComponent(varName)}`;
+  const res = await persesFetchFn(endpoint, {
+    method: 'GET',
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  });
+  if (res.status === 404) {
     return localVal;
   }
+  if (res.status === 401 && options?.allowUnauthorizedFallback) {
+    return localVal;
+  }
+  if (!res.ok) {
+    await throwForBadResponse(res, endpoint);
+  }
+  const payload = (await res.json()) as GlobalVariableResource;
+  const rawValue = payload?.spec?.kind === 'TextVariable' ? payload.spec.spec?.value : undefined;
+  if (!rawValue) return localVal;
+  const normalized = normalize(JSON.parse(rawValue));
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(normalized));
+  } catch {
+    // Ignore storage quota errors
+  }
+  return normalized;
 }
 
 export async function saveGlobalJsonConfig<T>(

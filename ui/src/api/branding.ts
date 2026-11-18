@@ -76,6 +76,7 @@ export async function fetchClusterSiteBranding(): Promise<SiteBrandingConfig> {
       return normalized;
     },
     local,
+    { allowUnauthorizedFallback: true },
   );
 }
 
