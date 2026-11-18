@@ -44,22 +44,39 @@ export function getEnforcedNamespaces(): string[] | null {
   return enforcedNamespaces;
 }
 
+export function getNamespaceScopeKey(namespaces?: string[] | null): string {
+  const active = namespaces !== undefined ? namespaces : enforcedNamespaces;
+  if (active === null) return '__admin__';
+  if (active.length === 0) return NO_WORKSPACE_SENTINEL;
+  return [...active].sort().join(',');
+}
+
 function normalizeIdentity(val: string | undefined): string {
   return (val ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function isIdenticalTokenNameMatch(memberName: string | undefined, rawUserLower: string): boolean {
+  if (!rawUserLower || !memberName) return false;
+  const tokens = memberName.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return tokens.length > 0 && tokens.every((t) => t === rawUserLower);
 }
 
 export function resolveUserWorkspaces(
   payload: WorkspaceMapPayload | undefined,
   username: string,
-  sub = '',
+  sub: string | string[] = '',
 ): UserWorkspaceScope[] {
   if (!payload?.enabled) return [];
   const items = payload.data?.items ?? [];
   const normUser = normalizeIdentity(username);
   const rawUserLower = (username ?? '').trim().toLowerCase();
-  const rawSubLower = (sub ?? '').trim().toLowerCase();
+  const subList = Array.isArray(sub) ? sub : sub ? [sub] : [];
+  const subLowers = Array.from(new Set(subList.map((s) => (s ?? '').trim().toLowerCase()).filter(Boolean)));
+  const normCandidates = Array.from(
+    new Set([normUser, ...subList.map((s) => normalizeIdentity(s))].filter(Boolean)),
+  );
 
-  if (!normUser && !rawSubLower) return [];
+  if (!normUser && subLowers.length === 0) return [];
 
   const matched: UserWorkspaceScope[] = [];
   const seenNs = new Set<string>();
@@ -81,7 +98,7 @@ export function resolveUserWorkspaces(
       if (v !== 'true') return false;
       const lowerK = k.toLowerCase();
       return (
-        (Boolean(rawSubLower) && lowerK.endsWith(`/${rawSubLower}`)) ||
+        subLowers.some((s) => lowerK.endsWith(`/${s}`)) ||
         (Boolean(rawUserLower) && lowerK.endsWith(`/${rawUserLower}`))
       );
     });
@@ -91,9 +108,11 @@ export function resolveUserWorkspaces(
       const mSub = (m.subject ?? '').trim().toLowerCase();
       const mNameLower = (m.name ?? '').trim().toLowerCase();
       const mNorm = normalizeIdentity(m.name);
-      if (rawSubLower && mSub === rawSubLower) return true;
+      if (mSub && subLowers.includes(mSub)) return true;
       if (rawUserLower && (mSub === rawUserLower || mNameLower === rawUserLower)) return true;
-      if (normUser && mNorm && mNorm === normUser) return true;
+      if (mNameLower && subLowers.includes(mNameLower)) return true;
+      if (mNorm && normCandidates.includes(mNorm)) return true;
+      if (isIdenticalTokenNameMatch(m.name, rawUserLower)) return true;
       return false;
     });
 
@@ -503,6 +522,15 @@ export function rewriteProxyRequestForNamespaces(
   }
 
   if (isPrometheus) {
+    const nsMatcher =
+      activeNs.length === 1
+        ? `namespace="${activeNs[0]}"`
+        : `namespace=~"^(${activeNs.map(escapeRegexLiteral).join('|')})$"`;
+    const isLabelOrSeriesEndpoint =
+      path.endsWith('/api/v1/series') ||
+      path.endsWith('/api/v1/labels') ||
+      path.includes('/api/v1/label/');
+
     if (activeNs.length === 1) {
       urlObj.searchParams.append('extra_label', `namespace=${activeNs[0]}`);
     }
@@ -516,6 +544,8 @@ export function rewriteProxyRequestForNamespaces(
       for (const m of matches) {
         urlObj.searchParams.append('match[]', injectPromQLNamespaceFilter(m, activeNs));
       }
+    } else if (isLabelOrSeriesEndpoint && !(typeof nextInit?.body === 'string' && nextInit.body.includes('match%5B%5D='))) {
+      urlObj.searchParams.append('match[]', `{${nsMatcher}}`);
     }
     if (typeof nextInit?.body === 'string' && (nextInit.body.includes('query=') || nextInit.body.includes('match%5B%5D='))) {
       const bodyParams = new URLSearchParams(nextInit.body);

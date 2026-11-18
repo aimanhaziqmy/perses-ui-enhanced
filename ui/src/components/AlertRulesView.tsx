@@ -52,6 +52,7 @@ import {
   evaluateLiveAlertRules,
   fetchAlertRulesConfig,
   getCurrentPersesUsername,
+  queryKeys,
   queryVictoriaLogs,
   saveAlertRulesConfig,
   useDatasourceTargets,
@@ -141,7 +142,7 @@ export function AlertRulesView({
   );
 
   const { data: rulesConfig = DEFAULT_ALERT_RULES, isLoading: loadingConfig } = useQuery<AlertRuleDefinition[], Error>({
-    queryKey: ['perses', 'alert-rules-config'],
+    queryKey: queryKeys.alertRulesConfig,
     queryFn: fetchAlertRulesConfig,
   });
 
@@ -152,11 +153,10 @@ export function AlertRulesView({
     error: rulesError,
     refetch: refetchRules,
   } = useQuery<LiveAlertRuleEvaluation[], Error>({
-    queryKey: [
-      'live-alert-rules',
+    queryKey: queryKeys.liveAlertRules(
       JSON.stringify(rulesConfig),
       allTargets.map((t) => `${t.scope}:${t.project ?? ''}:${t.name}`).join(','),
-    ],
+    ),
     queryFn: () => evaluateLiveAlertRules(rulesConfig, allTargets),
     refetchInterval: 30000,
     enabled: subTab === 'rules' && !loadingConfig && !loadingTargets,
@@ -169,7 +169,7 @@ export function AlertRulesView({
     error: eventsError,
     refetch: refetchEvents,
   } = useQuery<VictoriaLogsQueryResult, Error>({
-    queryKey: ['vlogs', 'k8s-events-tab', selectedVlKey, eventsQuery],
+    queryKey: queryKeys.k8sEventsTab(selectedVlKey, eventsQuery),
     queryFn: () => {
       const startIso = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
       const endIso = new Date().toISOString();
@@ -182,7 +182,7 @@ export function AlertRulesView({
   const persistRules = async (nextRules: AlertRuleDefinition[], successMsg: string) => {
     setFeedback(null);
     const saved = await saveAlertRulesConfig(nextRules);
-    await queryClient.setQueryData(['perses', 'alert-rules-config'], saved);
+    await queryClient.setQueryData(queryKeys.alertRulesConfig, saved);
     setFeedback({ kind: 'success', text: successMsg });
   };
 

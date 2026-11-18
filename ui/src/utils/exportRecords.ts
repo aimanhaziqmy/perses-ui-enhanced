@@ -16,9 +16,10 @@ const PRIORITY_COLUMNS = [
   '_stream_id',
 ];
 
-function escapeCsvCell(value: unknown): string {
+export function escapeCsvCell(value: unknown): string {
   if (value === null || value === undefined) return '';
-  const str = typeof value === 'string' ? value : JSON.stringify(value);
+  const raw = typeof value === 'string' ? value : JSON.stringify(value);
+  const str = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
   if (/[",\r\n]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
   }

@@ -381,6 +381,22 @@ export function buildJaegerV3SearchParams(params: {
   return qs;
 }
 
+async function fetchJaegerServicesForNs(basePath: string, ns?: string): Promise<string[]> {
+  const qs = ns ? `?namespace=${encodeURIComponent(ns)}` : '';
+  const res = await persesFetchFn(`${basePath}/api/services${qs}`, { credentials: 'include' });
+  if (res.status === 401) throw new UnauthorizedError('Session expired while loading trace services');
+  if (res.status === 404) {
+    const v3Res = await persesFetchFn(`${basePath}/api/v3/services${qs}`, { credentials: 'include' });
+    if (v3Res.status === 401) throw new UnauthorizedError('Session expired while loading trace services');
+    if (!v3Res.ok) throw new Error(`Jaeger v3 services HTTP ${v3Res.status}: ${await v3Res.text()}`);
+    const v3Payload = (await v3Res.json()) as { services?: string[] };
+    return (v3Payload.services ?? []).filter(Boolean);
+  }
+  if (!res.ok) throw new Error(`Jaeger services HTTP ${res.status}: ${await res.text()}`);
+  const payload = (await res.json()) as { data?: string[] };
+  return (payload.data ?? []).filter(Boolean);
+}
+
 export async function fetchTraceServices(target: DatasourceTarget): Promise<string[]> {
   const enforcedNs = getEnforcedNamespaces();
   if (enforcedNs && enforcedNs.length === 1 && enforcedNs[0] === NO_WORKSPACE_SENTINEL) {
@@ -394,18 +410,12 @@ export async function fetchTraceServices(target: DatasourceTarget): Promise<stri
     const payload = (await res.json()) as { tagValues?: string[] };
     return (payload.tagValues ?? []).filter(Boolean).sort();
   }
-  const res = await persesFetchFn(`${basePath}/api/services`, { credentials: 'include' });
-  if (res.status === 401) throw new UnauthorizedError('Session expired while loading trace services');
-  if (res.status === 404) {
-    const v3Res = await persesFetchFn(`${basePath}/api/v3/services`, { credentials: 'include' });
-    if (v3Res.status === 401) throw new UnauthorizedError('Session expired while loading trace services');
-    if (!v3Res.ok) throw new Error(`Jaeger v3 services HTTP ${v3Res.status}: ${await v3Res.text()}`);
-    const v3Payload = (await v3Res.json()) as { services?: string[] };
-    return (v3Payload.services ?? []).filter(Boolean).sort();
+  if (enforcedNs && enforcedNs.length > 1) {
+    const perNs = await Promise.all(enforcedNs.map((ns) => fetchJaegerServicesForNs(basePath, ns)));
+    return Array.from(new Set(perNs.flat())).sort();
   }
-  if (!res.ok) throw new Error(`Jaeger services HTTP ${res.status}: ${await res.text()}`);
-  const payload = (await res.json()) as { data?: string[] };
-  return (payload.data ?? []).filter(Boolean).sort();
+  const services = await fetchJaegerServicesForNs(basePath, enforcedNs?.[0]);
+  return Array.from(new Set(services)).sort();
 }
 
 export async function fetchTraceOperations(target: DatasourceTarget, service: string): Promise<string[]> {
@@ -430,33 +440,43 @@ export async function fetchTraceOperations(target: DatasourceTarget, service: st
   return (payload.data ?? []).filter(Boolean).sort();
 }
 
-export async function searchTraces(
+interface TraceSearchParams {
+  service?: string;
+  operation?: string;
+  startIso: string;
+  endIso: string;
+  minDuration?: string;
+  maxDuration?: string;
+  tags?: string;
+  limit?: number;
+}
+
+async function searchTracesSingleScope(
   target: DatasourceTarget,
-  params: {
-    service?: string;
-    operation?: string;
-    startIso: string;
-    endIso: string;
-    minDuration?: string;
-    maxDuration?: string;
-    tags?: string;
-    limit?: number;
-  },
+  params: TraceSearchParams,
+  scopedNs?: string,
 ): Promise<TraceDetail[]> {
-  const enforcedNs = getEnforcedNamespaces();
-  if (enforcedNs && enforcedNs.length === 1 && enforcedNs[0] === NO_WORKSPACE_SENTINEL) {
-    return [];
-  }
   const basePath = toProxyBasePath(target);
+  const scopedTags = scopedNs
+    ? [params.tags?.trim(), `k8s.namespace.name=${scopedNs}`].filter(Boolean).join(' ')
+    : params.tags;
+  const scopedParams: TraceSearchParams = { ...params, tags: scopedTags };
+
   if (target.pluginKind === 'TempoDatasource') {
     const qs = new URLSearchParams({
-      start: String(Math.floor(new Date(params.startIso).getTime() / 1000)),
-      end: String(Math.floor(new Date(params.endIso).getTime() / 1000)),
-      limit: String(params.limit ?? 20),
+      start: String(Math.floor(new Date(scopedParams.startIso).getTime() / 1000)),
+      end: String(Math.floor(new Date(scopedParams.endIso).getTime() / 1000)),
+      limit: String(scopedParams.limit ?? 20),
     });
-    if (params.minDuration?.trim()) qs.set('minDuration', params.minDuration.trim());
-    if (params.maxDuration?.trim()) qs.set('maxDuration', params.maxDuration.trim());
-    if (params.service) qs.set('tags', `service.name="${params.service}"`);
+    if (scopedParams.minDuration?.trim()) qs.set('minDuration', scopedParams.minDuration.trim());
+    if (scopedParams.maxDuration?.trim()) qs.set('maxDuration', scopedParams.maxDuration.trim());
+    const tempoTags: string[] = [];
+    if (scopedParams.service) tempoTags.push(`service.name="${scopedParams.service}"`);
+    if (scopedNs) {
+      const escaped = scopedNs.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      tempoTags.push(`k8s.namespace.name="${escaped}"`);
+    }
+    if (tempoTags.length > 0) qs.set('tags', tempoTags.join(' '));
     const res = await persesFetchFn(`${basePath}/api/search?${qs.toString()}`, { credentials: 'include' });
     if (res.status === 401) throw new UnauthorizedError('Session expired while searching Tempo traces');
     if (!res.ok) throw new Error(`Tempo search HTTP ${res.status}: ${await res.text()}`);
@@ -482,11 +502,12 @@ export async function searchTraces(
     }));
   }
 
-  const qs = buildJaegerSearchParams(params);
+  const filterNamespaces = scopedNs ? [scopedNs] : null;
+  const qs = buildJaegerSearchParams(scopedParams);
   const res = await persesFetchFn(`${basePath}/api/traces?${qs.toString()}`, { credentials: 'include' });
   if (res.status === 401) throw new UnauthorizedError('Session expired while searching Jaeger traces');
   if (res.status === 404) {
-    const v3Qs = buildJaegerV3SearchParams(params);
+    const v3Qs = buildJaegerV3SearchParams(scopedParams);
     const v3Res = await persesFetchFn(`${basePath}/api/v3/traces?${v3Qs.toString()}`, { credentials: 'include' });
     if (v3Res.status === 401) throw new UnauthorizedError('Session expired while searching Jaeger traces');
     if (v3Res.status === 404) {
@@ -496,12 +517,37 @@ export async function searchTraces(
     }
     if (!v3Res.ok) throw new Error(`Jaeger v3 search HTTP ${v3Res.status}: ${await v3Res.text()}`);
     const v3Traces = parseJaegerV3TracesResponse(await v3Res.text()).sort((a, b) => b.startTimeUs - a.startTimeUs);
-    return enforcedNs ? v3Traces.filter((t) => traceMatchesNamespaces(t, enforcedNs)) : v3Traces;
+    return filterNamespaces ? v3Traces.filter((t) => traceMatchesNamespaces(t, filterNamespaces)) : v3Traces;
   }
   if (!res.ok) throw new Error(`Jaeger search HTTP ${res.status}: ${await res.text()}`);
   const payload = (await res.json()) as { data?: RawJaegerTrace[] };
   const traces = (payload.data ?? []).map(normalizeJaegerTrace).sort((a, b) => b.startTimeUs - a.startTimeUs);
-  return enforcedNs ? traces.filter((t) => traceMatchesNamespaces(t, enforcedNs)) : traces;
+  return filterNamespaces ? traces.filter((t) => traceMatchesNamespaces(t, filterNamespaces)) : traces;
+}
+
+export async function searchTraces(
+  target: DatasourceTarget,
+  params: TraceSearchParams,
+): Promise<TraceDetail[]> {
+  const enforcedNs = getEnforcedNamespaces();
+  if (enforcedNs && enforcedNs.length === 1 && enforcedNs[0] === NO_WORKSPACE_SENTINEL) {
+    return [];
+  }
+  if (enforcedNs && enforcedNs.length > 1) {
+    const perNs = await Promise.all(enforcedNs.map((ns) => searchTracesSingleScope(target, params, ns)));
+    const deduped = new Map<string, TraceDetail>();
+    for (const batch of perNs) {
+      for (const trace of batch) {
+        if (!deduped.has(trace.traceId)) {
+          deduped.set(trace.traceId, trace);
+        }
+      }
+    }
+    return Array.from(deduped.values())
+      .sort((a, b) => b.startTimeUs - a.startTimeUs)
+      .slice(0, params.limit ?? 20);
+  }
+  return searchTracesSingleScope(target, params, enforcedNs?.[0]);
 }
 
 export async function fetchTraceById(target: DatasourceTarget, traceId: string): Promise<TraceDetail> {

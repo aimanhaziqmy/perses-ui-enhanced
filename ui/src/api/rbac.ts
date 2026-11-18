@@ -21,6 +21,10 @@ export function fetchPersesUsers(): Promise<UserResource[]> {
   return apiGetJson<UserResource[]>('/api/v1/users');
 }
 
+export function fetchPersesUser(username: string): Promise<UserResource> {
+  return apiGetJson<UserResource>(`/api/v1/users/${encodeURIComponent(username)}`);
+}
+
 export function createPersesUser(user: UserResource): Promise<UserResource> {
   return apiSendJson<UserResource>('/api/v1/users', 'POST', user);
 }
@@ -312,7 +316,7 @@ export function getUiCapabilities(
 
   return {
     isSiteAdmin: canManageSiteSettings(perms),
-    canManageUsers: hasPersesPermission(perms, ['read', 'create', 'update', 'delete'], ['User', 'GlobalRole']),
+    canManageUsers: hasPersesPermission(perms, ['create', 'update', 'delete'], ['User', 'GlobalRole']),
     canCreateProject: hasPersesPermission(perms, ['create'], ['Project']),
     canDeleteProject: (project?: string) => hasPersesPermission(perms, ['delete'], ['Project'], project),
     canManageDashboards: (project?: string) =>
