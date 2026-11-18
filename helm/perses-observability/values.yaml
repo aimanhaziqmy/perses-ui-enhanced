@@ -211,6 +211,9 @@ victoriaMetrics:
           - job_name: perses
             static_configs:
               - targets: ["perses:8080"]
+          - job_name: victoriatraces
+            static_configs:
+              - targets: ["victoria-traces:10428"]
           - job_name: node-exporter
             kubernetes_sd_configs:
               - role: endpoints
@@ -432,7 +435,35 @@ observabilityUi:
     workspaceApiPath: "/api/v1/namespaces"
 
 # ------------------------------------------------------------------------------
-# 10. Optional Jaeger v2 Trace Backend (Apache 2.0, disabled by default)
+# 10. VictoriaTraces Backend (StatefulSet + PVC, Jaeger-compatible API)
+# ------------------------------------------------------------------------------
+victoriaTraces:
+  enabled: true
+  image:
+    repository: victoriametrics/victoria-traces
+    tag: v0.13.0
+    pullPolicy: IfNotPresent
+  retentionPeriod: 7d
+  persistence:
+    enabled: true
+    # Leave empty ("") to use the cluster default StorageClass
+    storageClassName: ""
+    size: 10Gi
+  service:
+    name: victoria-traces
+    httpPort: 10428
+    otlpGrpcPort: 4317
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  nodeSelector: {}
+
+# ------------------------------------------------------------------------------
+# 10b. Optional Jaeger v2 Trace Backend (Apache 2.0, disabled by default)
 # ------------------------------------------------------------------------------
 jaeger:
   enabled: false

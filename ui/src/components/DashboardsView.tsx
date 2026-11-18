@@ -40,7 +40,7 @@ import Plus from 'mdi-material-ui/Plus';
 import Refresh from 'mdi-material-ui/Refresh';
 import ShareVariantOutline from 'mdi-material-ui/ShareVariantOutline';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
 import { DashboardDialogs } from './DashboardDialogs';
@@ -89,7 +89,9 @@ export function DashboardsView({
   const embedDashboard = embedMatch ? decodeURIComponent(embedMatch[2]) : embedSearchParams.get('dashboard') || '';
   const embedPanelKey = isEmbed ? embedSearchParams.get('panel') || '' : '';
 
-  const [viewMode, setViewMode] = useState<'list' | 'detail'>(() => (isEmbed ? 'detail' : 'list'));
+  const [viewMode, setViewMode] = useState<'list' | 'detail'>(() =>
+    isEmbed || (embedProject && embedDashboard) ? 'detail' : 'list',
+  );
   const [searchText, setSearchText] = useState<string>('');
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>(() =>
     defaultProject ? { [defaultProject]: true } : {},
@@ -99,6 +101,21 @@ export function DashboardsView({
   const [selectedProject, setSelectedProject] = useState<string>(() => embedProject || defaultProject);
   const [selectedDashboardName, setSelectedDashboardName] = useState<string>(() => embedDashboard);
   const [startInEditMode, setStartInEditMode] = useState<boolean>(false);
+  const prevHasDeepLinkRef = useRef<boolean>(Boolean(embedProject && embedDashboard));
+
+  useEffect(() => {
+    if (isEmbed) return;
+    const hasDeepLink = Boolean(embedProject && embedDashboard);
+    if (hasDeepLink) {
+      setSelectedProject(embedProject);
+      setSelectedDashboardName(embedDashboard);
+      setStartInEditMode(false);
+      setViewMode('detail');
+    } else if (prevHasDeepLinkRef.current) {
+      setViewMode('list');
+    }
+    prevHasDeepLinkRef.current = hasDeepLink;
+  }, [isEmbed, embedProject, embedDashboard]);
   const [feedback, setFeedback] = useState<{ kind: 'success' | 'warning' | 'error'; text: string } | null>(null);
 
   // Share & Embed modal state

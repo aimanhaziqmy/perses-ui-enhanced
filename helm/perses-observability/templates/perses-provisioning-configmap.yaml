@@ -9,6 +9,12 @@
 {{- else if .Values.victoriaLogs.enabled }}
 {{- $vlUrl = printf "http://%s.%s.svc.cluster.local:9428" (include "perses-observability.victoriaLogs.serviceName" .) .Release.Namespace }}
 {{- end }}
+{{- $vt := .Values.victoriaTraces | default dict -}}
+{{- $vtSvc := $vt.service | default dict -}}
+{{- $vtUrl := printf "http://%s.%s.svc.cluster.local:%d/select/jaeger" (default "victoria-traces" $vtSvc.name) .Release.Namespace (int (default 10428 $vtSvc.httpPort)) }}
+{{- $jaeger := .Values.jaeger | default dict -}}
+{{- $jaegerSvc := $jaeger.service | default dict -}}
+{{- $jaegerUrl := printf "http://%s.%s.svc.cluster.local:%d" (default "jaeger" $jaegerSvc.name) .Release.Namespace (int (default 16686 $jaegerSvc.queryPort)) }}
 {{- $hasUsers := .Values.persesProvisioning.bootstrapUsers }}
 {{- $hasDatasources := and .Values.persesProvisioning.enabled .Values.persesProvisioning.seedDatasources }}
 {{- $hasProjects := and .Values.persesProvisioning.enabled .Values.persesProvisioning.seedProjects }}
@@ -172,6 +178,56 @@ data:
           }
         }
       }
+      {{- if $vt.enabled }},
+      {
+        "kind": "GlobalDatasource",
+        "metadata": {
+          "name": "VictoriaTraces"
+        },
+        "spec": {
+          "default": true,
+          "display": {
+            "name": "VictoriaTraces"
+          },
+          "plugin": {
+            "kind": "JaegerDatasource",
+            "spec": {
+              "proxy": {
+                "kind": "HTTPProxy",
+                "spec": {
+                  "url": {{ $vtUrl | quote }}
+                }
+              }
+            }
+          }
+        }
+      }
+      {{- end }}
+      {{- if $jaeger.enabled }},
+      {
+        "kind": "GlobalDatasource",
+        "metadata": {
+          "name": "Jaeger"
+        },
+        "spec": {
+          "default": {{ not (default false $vt.enabled) }},
+          "display": {
+            "name": "Jaeger"
+          },
+          "plugin": {
+            "kind": "JaegerDatasource",
+            "spec": {
+              "proxy": {
+                "kind": "HTTPProxy",
+                "spec": {
+                  "url": {{ $jaegerUrl | quote }}
+                }
+              }
+            }
+          }
+        }
+      }
+      {{- end }}
     ]
   {{- end }}
   {{- if $hasProjects }}
@@ -781,6 +837,160 @@ data:
           ]
         }
       }
+      {{- if $vt.enabled }},
+      {
+        "kind": "Dashboard",
+        "metadata": {
+          "name": "victoriatraces-tracing",
+          "project": {{ .Values.persesProvisioning.projectName | quote }}
+        },
+        "spec": {
+          "display": {
+            "name": "VictoriaTraces Distributed Tracing"
+          },
+          "duration": "1h",
+          "refreshInterval": "0s",
+          "variables": [
+            {
+              "kind": "TextVariable",
+              "spec": {
+                "name": "service",
+                "value": "",
+                "display": {
+                  "name": "Service",
+                  "description": "Service name for trace search (required when Trace ID is empty)"
+                }
+              }
+            },
+            {
+              "kind": "TextVariable",
+              "spec": {
+                "name": "operation",
+                "value": "",
+                "display": {
+                  "name": "Operation",
+                  "description": "Optional span operation filter"
+                }
+              }
+            },
+            {
+              "kind": "TextVariable",
+              "spec": {
+                "name": "minDuration",
+                "value": "",
+                "display": {
+                  "name": "Min Duration",
+                  "description": "Optional minimum duration (e.g. 50ms, 1s)"
+                }
+              }
+            },
+            {
+              "kind": "TextVariable",
+              "spec": {
+                "name": "traceId",
+                "value": "",
+                "display": {
+                  "name": "Trace ID",
+                  "description": "16 or 32 hex character Trace ID for Gantt waterfall"
+                }
+              }
+            }
+          ],
+          "panels": {
+            "traceSearchTable": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "Trace Search Results",
+                  "description": "Traces matching Service, Operation, and Min Duration filters in VictoriaTraces"
+                },
+                "plugin": {
+                  "kind": "TraceTable",
+                  "spec": {
+                    "visual": {
+                      "palette": {
+                        "mode": "auto"
+                      }
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TraceQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "JaegerTraceQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "JaegerDatasource",
+                            "name": "VictoriaTraces"
+                          },
+                          "service": "$service",
+                          "operation": "$operation",
+                          "minDuration": "$minDuration",
+                          "limit": 50
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "traceGanttWaterfall": {
+              "kind": "Panel",
+              "spec": {
+                "display": {
+                  "name": "Trace Span Waterfall",
+                  "description": "Gantt timeline of spans for the selected Trace ID ($traceId)"
+                },
+                "plugin": {
+                  "kind": "TracingGanttChart",
+                  "spec": {
+                    "visual": {
+                      "palette": {
+                        "mode": "auto"
+                      }
+                    }
+                  }
+                },
+                "queries": [
+                  {
+                    "kind": "TraceQuery",
+                    "spec": {
+                      "plugin": {
+                        "kind": "JaegerTraceQuery",
+                        "spec": {
+                          "datasource": {
+                            "kind": "JaegerDatasource",
+                            "name": "VictoriaTraces"
+                          },
+                          "traceId": "$traceId"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "layouts": [
+            {
+              "kind": "Grid",
+              "spec": {
+                "display": {
+                  "title": "VictoriaTraces Search & Waterfall",
+                  "collapse": { "open": true }
+                },
+                "items": [
+                  { "x": 0, "y": 0, "width": 24, "height": 10, "content": { "$ref": "#/spec/panels/traceSearchTable" } },
+                  { "x": 0, "y": 10, "width": 24, "height": 12, "content": { "$ref": "#/spec/panels/traceGanttWaterfall" } }
+                ]
+              }
+            }
+          ]
+        }
+      }
+      {{- end }}
     ]
   {{- end }}
 {{- end }}

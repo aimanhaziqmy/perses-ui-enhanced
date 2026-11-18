@@ -26,6 +26,11 @@ export interface TraceTag {
   value: string;
 }
 
+export interface TraceLogEvent {
+  timestampUs: number;
+  fields: TraceTag[];
+}
+
 export interface TraceSpan {
   spanId: string;
   parentSpanId?: string;
@@ -38,6 +43,7 @@ export interface TraceSpan {
   hasError: boolean;
   tags: TraceTag[];
   processTags: TraceTag[];
+  logs?: TraceLogEvent[];
 }
 
 export interface TraceSummary {
@@ -63,6 +69,7 @@ interface RawJaegerSpan {
   processID?: string;
   references?: Array<{ refType?: string; spanID?: string }>;
   tags?: Array<{ key?: string; value?: unknown }>;
+  logs?: Array<{ timestamp?: number; fields?: Array<{ key?: string; value?: unknown }> }>;
 }
 
 interface RawJaegerTrace {
@@ -94,6 +101,12 @@ export function normalizeJaegerTrace(raw: RawJaegerTrace): TraceDetail {
     const processTags: TraceTag[] = (proc?.tags ?? [])
       .filter((t) => Boolean(t.key))
       .map((t) => ({ key: String(t.key), value: String(t.value ?? '') }));
+    const logs: TraceLogEvent[] = (s.logs ?? []).map((entry) => ({
+      timestampUs: Number(entry.timestamp ?? startUs),
+      fields: (entry.fields ?? [])
+        .filter((f) => Boolean(f.key))
+        .map((f) => ({ key: String(f.key), value: String(f.value ?? '') })),
+    }));
 
     const hasError = tags.some(
       (t) =>
@@ -114,6 +127,7 @@ export function normalizeJaegerTrace(raw: RawJaegerTrace): TraceDetail {
       hasError,
       tags,
       processTags,
+      logs,
     };
   });
 

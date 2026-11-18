@@ -1,0 +1,82 @@
+{{- if .Values.victoriaTraces.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ printf "%s-victoria-traces" (.Release.Name | trunc 34 | trimSuffix "-") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: victoria-traces
+spec:
+  serviceName: {{ default "victoria-traces" .Values.victoriaTraces.service.name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app: victoria-traces
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: victoria-traces
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: victoria-traces
+    spec:
+      {{- with .Values.victoriaTraces.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: victoria-traces
+          image: "{{ .Values.victoriaTraces.image.repository }}:{{ .Values.victoriaTraces.image.tag }}"
+          imagePullPolicy: {{ .Values.victoriaTraces.image.pullPolicy }}
+          args:
+            - -envflag.enable=true
+            - -retentionPeriod={{ .Values.victoriaTraces.retentionPeriod }}
+            - -storageDataPath=/victoria-traces-data
+            - -httpListenAddr=:{{ .Values.victoriaTraces.service.httpPort }}
+            - -otlpGRPCListenAddr=:{{ .Values.victoriaTraces.service.otlpGrpcPort }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.victoriaTraces.service.httpPort }}
+              protocol: TCP
+            - name: otlp-grpc
+              containerPort: {{ .Values.victoriaTraces.service.otlpGrpcPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: traces-data
+              mountPath: /victoria-traces-data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.victoriaTraces.resources | nindent 12 }}
+      {{- if not .Values.victoriaTraces.persistence.enabled }}
+      volumes:
+        - name: traces-data
+          emptyDir: {}
+      {{- end }}
+  {{- if .Values.victoriaTraces.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: traces-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.victoriaTraces.persistence.storageClassName }}
+        storageClassName: {{ .Values.victoriaTraces.persistence.storageClassName }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.victoriaTraces.persistence.size }}
+  {{- end }}
+{{- end }}
+

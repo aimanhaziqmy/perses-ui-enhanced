@@ -1,0 +1,25 @@
+{{- if .Values.victoriaTraces.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ default "victoria-traces" .Values.victoriaTraces.service.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "perses-observability.labels" . | nindent 4 }}
+    app.kubernetes.io/component: victoria-traces
+spec:
+  type: ClusterIP
+  selector:
+    app: victoria-traces
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: {{ .Values.victoriaTraces.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+    - name: otlp-grpc
+      port: {{ .Values.victoriaTraces.service.otlpGrpcPort }}
+      targetPort: otlp-grpc
+      protocol: TCP
+{{- end }}
+

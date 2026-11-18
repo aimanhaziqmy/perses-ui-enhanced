@@ -189,7 +189,7 @@ export function DatasourceDialogs({
                   form.pluginKind === 'VictoriaLogsDatasource'
                     ? 'http://vl-victoria-logs-single-server:9428'
                     : form.pluginKind === 'JaegerDatasource'
-                      ? 'http://jaeger-query:16686'
+                      ? 'http://victoria-traces:10428/select/jaeger'
                       : form.pluginKind === 'TempoDatasource'
                         ? 'http://tempo:3200'
                         : 'http://victoria-metrics:8428'

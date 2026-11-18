@@ -299,7 +299,13 @@ export function SsoSettingsCard() {
         </Typography>
 
         <Stack spacing={2}>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <Box
+            sx={{
+              display: 'grid',
+              gap: 2,
+              gridTemplateColumns: { xs: '1fr', md: '2fr 2fr 1.5fr' },
+            }}
+          >
             <TextField
               select
               label="Identity Provider Preset"
@@ -328,11 +334,17 @@ export function SsoSettingsCard() {
               onChange={(e) => setSlugId(e.target.value)}
               helperText="URL-safe identifier (e.g. keycloak, okta)"
               size="small"
-              sx={{ width: { xs: '100%', md: 220 } }}
+              fullWidth
             />
-          </Stack>
+          </Box>
 
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+          <Box
+            sx={{
+              display: 'grid',
+              gap: 2,
+              gridTemplateColumns: { xs: '1fr', md: '2fr 1.2fr' },
+            }}
+          >
             <TextField
               label="Observability UI Base URL"
               value={uiBaseUrl}
@@ -347,9 +359,9 @@ export function SsoSettingsCard() {
               onChange={(e) => setClientId(e.target.value)}
               helperText="OAuth / OIDC client ID registered in your IdP"
               size="small"
-              sx={{ width: { xs: '100%', md: 280 } }}
+              fullWidth
             />
-          </Stack>
+          </Box>
 
           <TextField
             label="Issuer / Realm Base URL"
