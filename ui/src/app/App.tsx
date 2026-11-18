@@ -50,46 +50,46 @@ import {
   saveClusterSiteBranding,
   saveRoleViewPermissions,
   setEnforcedNamespaces,
-} from './api/persesClient';
-import { getLocalSiteBranding } from './api/persesClient';
+} from '@/api/persesClient';
+import { getLocalSiteBranding } from '@/api/persesClient';
 import { MoonIcon, SidebarCollapseIcon, SunIcon } from '@/components/ui/BrandIcons';
-import { LoginView } from './components/LoginView';
-import { type NavKey, Sidebar } from './components/Sidebar';
+import { LoginView } from '@/components/LoginView';
+import { type NavKey, Sidebar } from '@/components/Sidebar';
 import { ViewForbiddenState, ViewLoadingState } from '@/components/ui/ViewStates';
-import type { ThemeMode } from './theme/persesTheme';
+import type { ThemeMode } from '@/theme/persesTheme';
 
 const DashboardsView = lazy(() =>
-  import('./components/DashboardsView').then((m) => ({ default: m.DashboardsView })),
+  import('@/components/DashboardsView').then((m) => ({ default: m.DashboardsView })),
 );
 const ExploreView = lazy(() =>
-  import('./components/ExploreView').then((m) => ({ default: m.ExploreView })),
+  import('@/components/ExploreView').then((m) => ({ default: m.ExploreView })),
 );
 const LogsExplorerView = lazy(() =>
-  import('./components/LogsExplorerView').then((m) => ({ default: m.LogsExplorerView })),
+  import('@/components/LogsExplorerView').then((m) => ({ default: m.LogsExplorerView })),
 );
 const TracesExplorerView = lazy(() =>
-  import('./components/TracesExplorerView').then((m) => ({ default: m.TracesExplorerView })),
+  import('@/components/TracesExplorerView').then((m) => ({ default: m.TracesExplorerView })),
 );
 const HostsView = lazy(() =>
-  import('./components/HostsView').then((m) => ({ default: m.HostsView })),
+  import('@/components/HostsView').then((m) => ({ default: m.HostsView })),
 );
 const AlertRulesView = lazy(() =>
-  import('./components/AlertRulesView').then((m) => ({ default: m.AlertRulesView })),
+  import('@/components/AlertRulesView').then((m) => ({ default: m.AlertRulesView })),
 );
 const DatasourcesView = lazy(() =>
-  import('./components/DatasourcesView').then((m) => ({ default: m.DatasourcesView })),
+  import('@/components/DatasourcesView').then((m) => ({ default: m.DatasourcesView })),
 );
 const UsersView = lazy(() =>
-  import('./components/UsersView').then((m) => ({ default: m.UsersView })),
+  import('@/components/UsersView').then((m) => ({ default: m.UsersView })),
 );
 const RolesView = lazy(() =>
-  import('./components/RolesView').then((m) => ({ default: m.RolesView })),
+  import('@/components/RolesView').then((m) => ({ default: m.RolesView })),
 );
 const SiteSettingsView = lazy(() =>
-  import('./components/SiteSettingsView').then((m) => ({ default: m.SiteSettingsView })),
+  import('@/components/SiteSettingsView').then((m) => ({ default: m.SiteSettingsView })),
 );
 const SystemAboutView = lazy(() =>
-  import('./components/SystemAboutView').then((m) => ({ default: m.SystemAboutView })),
+  import('@/components/SystemAboutView').then((m) => ({ default: m.SystemAboutView })),
 );
 
 const ROUTE_TITLES: Record<NavKey, string> = {
