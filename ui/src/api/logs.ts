@@ -6,6 +6,7 @@ import {
   saveGlobalJsonConfig,
   toProxyBasePath,
 } from './http';
+import { splitFirstUnquotedPipe } from './workspace';
 
 export type LogLevel = 'error' | 'warning' | 'info' | 'debug' | 'other';
 
@@ -116,38 +117,6 @@ export function buildLogsQLLevelFilter(selectedLevels: LogLevel[]): string | nul
   }
 
   return clauses.length === 1 ? clauses[0] : `(${clauses.join(' OR ')})`;
-}
-
-function splitFirstUnquotedPipe(query: string): { filterPart: string; pipePart: string } {
-  let inSingle = false;
-  let inDouble = false;
-  let escaped = false;
-  for (let i = 0; i < query.length; i++) {
-    const ch = query[i];
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === '\\') {
-      escaped = true;
-      continue;
-    }
-    if (ch === "'" && !inDouble) {
-      inSingle = !inSingle;
-      continue;
-    }
-    if (ch === '"' && !inSingle) {
-      inDouble = !inDouble;
-      continue;
-    }
-    if (ch === '|' && !inSingle && !inDouble) {
-      return {
-        filterPart: query.slice(0, i).trim(),
-        pipePart: query.slice(i).trim(),
-      };
-    }
-  }
-  return { filterPart: query.trim(), pipePart: '' };
 }
 
 export function injectLogsQLFilter(baseQuery: string, filterExpr: string | null): string {
@@ -349,6 +318,7 @@ export async function queryVictoriaLogsHits(
   endIso: string,
   stepSeconds: number,
   target: DatasourceTarget | string,
+  signal?: AbortSignal,
 ): Promise<VictoriaLogHitBucket[]> {
   const params = new URLSearchParams({
     query: query.trim() || '*',
@@ -361,6 +331,7 @@ export async function queryVictoriaLogsHits(
   const res = await persesFetchFn(url, {
     method: 'GET',
     credentials: 'include',
+    signal,
     headers: { Accept: 'application/json' },
   });
   if (res.status === 401) {
@@ -423,6 +394,7 @@ export async function queryVictoriaLogsFieldHistogram(
   target: DatasourceTarget | string,
   field: 'kubernetes.container_name' | '_stream',
   fieldsLimit = 10,
+  signal?: AbortSignal,
 ): Promise<{ buckets: VictoriaLogGroupHitBucket[]; seriesKeys: string[] }> {
   const safeStep = Math.max(1, stepSeconds);
   const params = new URLSearchParams({
@@ -438,6 +410,7 @@ export async function queryVictoriaLogsFieldHistogram(
   const res = await persesFetchFn(url, {
     method: 'GET',
     credentials: 'include',
+    signal,
     headers: { Accept: 'application/json' },
   });
   if (res.status === 401) {
@@ -562,6 +535,7 @@ export async function queryVictoriaLogsLevelHistogram(
   stepSeconds: number,
   target: DatasourceTarget | string,
   selectedLevels?: LogLevel[],
+  signal?: AbortSignal,
 ): Promise<{ buckets: VictoriaLogHitBucket[]; stacked: boolean }> {
   const safeStep = Math.max(1, stepSeconds);
   const startMs = new Date(startIso).getTime();
@@ -593,6 +567,7 @@ export async function queryVictoriaLogsLevelHistogram(
       const res = await persesFetchFn(url, {
         method: 'GET',
         credentials: 'include',
+        signal,
         headers: { Accept: 'application/stream+json, application/json, text/plain' },
       });
       if (res.status === 401) {
@@ -654,10 +629,11 @@ export async function queryVictoriaLogsLevelHistogram(
       }
     } catch (err) {
       if (err instanceof UnauthorizedError) throw err;
+      if (signal?.aborted || (err instanceof DOMException && err.name === 'AbortError')) throw err;
     }
   }
 
-  const hits = await queryVictoriaLogsHits(query, startIso, endIso, safeStep, target);
+  const hits = await queryVictoriaLogsHits(query, startIso, endIso, safeStep, target, signal);
   return { buckets: hits, stacked: false };
 }
 

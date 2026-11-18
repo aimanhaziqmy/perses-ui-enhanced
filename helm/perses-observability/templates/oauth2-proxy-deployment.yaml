@@ -40,7 +40,7 @@ spec:
             - --cookie-samesite=lax
             - --cookie-expire=24h
             - --email-domain=*
-            - --upstream=http://vmauth-victoria-metrics-auth:8427
+            - --upstream=http://{{ include "perses-observability.vmauth.serviceName" . }}:8427
             - --http-address=0.0.0.0:4180
             - --skip-provider-button=true
             - --set-xauthrequest=true

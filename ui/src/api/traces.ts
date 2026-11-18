@@ -1,5 +1,25 @@
 import type { DatasourceTarget } from './datasources';
 import { UnauthorizedError, persesFetchFn, toProxyBasePath } from './http';
+import { NO_WORKSPACE_SENTINEL, getEnforcedNamespaces } from './workspace';
+
+const TRACE_NAMESPACE_KEYS = new Set([
+  'k8s.namespace.name',
+  'namespace',
+  'kubernetes.namespace_name',
+  'kubernetes.pod_namespace',
+]);
+
+export function traceMatchesNamespaces(trace: TraceDetail, namespaces: string[]): boolean {
+  if (namespaces.length === 0 || (namespaces.length === 1 && namespaces[0] === NO_WORKSPACE_SENTINEL)) {
+    return false;
+  }
+  const allowed = new Set(namespaces);
+  return trace.spans.some(
+    (span) =>
+      span.tags.some((t) => TRACE_NAMESPACE_KEYS.has(t.key) && allowed.has(t.value)) ||
+      span.processTags.some((t) => TRACE_NAMESPACE_KEYS.has(t.key) && allowed.has(t.value)),
+  );
+}
 
 export interface TraceTag {
   key: string;
@@ -348,6 +368,10 @@ export function buildJaegerV3SearchParams(params: {
 }
 
 export async function fetchTraceServices(target: DatasourceTarget): Promise<string[]> {
+  const enforcedNs = getEnforcedNamespaces();
+  if (enforcedNs && enforcedNs.length === 1 && enforcedNs[0] === NO_WORKSPACE_SENTINEL) {
+    return [];
+  }
   const basePath = toProxyBasePath(target);
   if (target.pluginKind === 'TempoDatasource') {
     const res = await persesFetchFn(`${basePath}/api/search/tag/service.name/values`, { credentials: 'include' });
@@ -405,6 +429,10 @@ export async function searchTraces(
     limit?: number;
   },
 ): Promise<TraceDetail[]> {
+  const enforcedNs = getEnforcedNamespaces();
+  if (enforcedNs && enforcedNs.length === 1 && enforcedNs[0] === NO_WORKSPACE_SENTINEL) {
+    return [];
+  }
   const basePath = toProxyBasePath(target);
   if (target.pluginKind === 'TempoDatasource') {
     const qs = new URLSearchParams({
@@ -453,14 +481,20 @@ export async function searchTraces(
       throw new Error(`Jaeger v3 search HTTP 404: ${body}`);
     }
     if (!v3Res.ok) throw new Error(`Jaeger v3 search HTTP ${v3Res.status}: ${await v3Res.text()}`);
-    return parseJaegerV3TracesResponse(await v3Res.text()).sort((a, b) => b.startTimeUs - a.startTimeUs);
+    const v3Traces = parseJaegerV3TracesResponse(await v3Res.text()).sort((a, b) => b.startTimeUs - a.startTimeUs);
+    return enforcedNs ? v3Traces.filter((t) => traceMatchesNamespaces(t, enforcedNs)) : v3Traces;
   }
   if (!res.ok) throw new Error(`Jaeger search HTTP ${res.status}: ${await res.text()}`);
   const payload = (await res.json()) as { data?: RawJaegerTrace[] };
-  return (payload.data ?? []).map(normalizeJaegerTrace).sort((a, b) => b.startTimeUs - a.startTimeUs);
+  const traces = (payload.data ?? []).map(normalizeJaegerTrace).sort((a, b) => b.startTimeUs - a.startTimeUs);
+  return enforcedNs ? traces.filter((t) => traceMatchesNamespaces(t, enforcedNs)) : traces;
 }
 
 export async function fetchTraceById(target: DatasourceTarget, traceId: string): Promise<TraceDetail> {
+  const enforcedNs = getEnforcedNamespaces();
+  if (enforcedNs && enforcedNs.length === 1 && enforcedNs[0] === NO_WORKSPACE_SENTINEL) {
+    throw new Error(`Trace "${traceId}" is outside your workspace namespace scope.`);
+  }
   const basePath = toProxyBasePath(target);
   const res = await persesFetchFn(`${basePath}/api/traces/${encodeURIComponent(traceId)}`, {
     credentials: 'include',
@@ -477,6 +511,9 @@ export async function fetchTraceById(target: DatasourceTarget, traceId: string):
     if (!firstV3) {
       throw new Error(`Trace "${traceId}" not found.`);
     }
+    if (enforcedNs && !traceMatchesNamespaces(firstV3, enforcedNs)) {
+      throw new Error(`Trace "${traceId}" is outside your workspace namespace scope.`);
+    }
     return firstV3;
   }
   if (!res.ok) throw new Error(`Trace fetch HTTP ${res.status}: ${await res.text()}`);
@@ -485,5 +522,9 @@ export async function fetchTraceById(target: DatasourceTarget, traceId: string):
   if (!first) {
     throw new Error(`Trace "${traceId}" not found.`);
   }
-  return normalizeJaegerTrace(first);
+  const normalized = normalizeJaegerTrace(first);
+  if (enforcedNs && !traceMatchesNamespaces(normalized, enforcedNs)) {
+    throw new Error(`Trace "${traceId}" is outside your workspace namespace scope.`);
+  }
+  return normalized;
 }

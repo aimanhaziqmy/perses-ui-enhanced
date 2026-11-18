@@ -258,6 +258,14 @@ export function LogsExplorerView({
   });
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+  const [debouncedQuery, setDebouncedQuery] = useState<string>(activeTab.query);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(activeTab.query);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [activeTab.query, activeTab.id]);
 
   const updateActiveTab = (patch: Partial<QueryTabState>) => {
     setTabs((prev) => prev.map((t) => (t.id === activeTab.id ? { ...t, ...patch } : t)));
@@ -268,6 +276,7 @@ export function LogsExplorerView({
     const id = `q${Date.now()}`;
     setTabs((prev) => [...prev, { id, label: `Query ${num}`, query: '*', rangeMinutes: 60, selectedLevels: [] }]);
     setActiveTabId(id);
+    setDebouncedQuery('*');
     setCursorStack([]);
     setPage(0);
     setSelectedLogIndex(null);
@@ -276,13 +285,13 @@ export function LogsExplorerView({
 
   const effectiveQuery = useMemo(() => {
     const levelExpr = buildLogsQLLevelFilter(activeTab.selectedLevels);
-    let q = injectLogsQLFilter(activeTab.query, levelExpr);
+    let q = injectLogsQLFilter(debouncedQuery, levelExpr);
     if (lockedNamespace) {
       const escapedNs = lockedNamespace.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       q = injectLogsQLFilter(q, `kubernetes.namespace_name:="${escapedNs}"`);
     }
     return q;
-  }, [activeTab.query, activeTab.selectedLevels, lockedNamespace]);
+  }, [debouncedQuery, activeTab.selectedLevels, lockedNamespace]);
 
   const { startDate, endDate } = useMemo(() => {
     if (activeTab.customStartIso && activeTab.customEndIso) {
@@ -319,14 +328,14 @@ export function LogsExplorerView({
       cursorEndIso,
       executedNonce,
     ],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       queryVictoriaLogs(
         effectiveQuery,
         LOG_BATCH_SIZE,
         startDate.toISOString(),
         cursorEndIso,
         activeTarget!,
-        { sortDesc: true },
+        { sortDesc: true, signal },
       ),
     enabled: Boolean(activeTarget),
   });
@@ -351,7 +360,7 @@ export function LogsExplorerView({
       activeTab.customEndIso ?? '',
       executedNonce,
     ],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       queryVictoriaLogsFieldHistogram(
         effectiveQuery,
         startDate.toISOString(),
@@ -359,6 +368,8 @@ export function LogsExplorerView({
         stepSeconds,
         activeTarget!,
         histogramGroupBy === 'container' ? 'kubernetes.container_name' : '_stream',
+        10,
+        signal,
       ),
     enabled: Boolean(activeTarget) && histogramGroupBy !== 'level',
   });
@@ -376,7 +387,7 @@ export function LogsExplorerView({
       activeTab.selectedLevels.join(','),
       executedNonce,
     ],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       queryVictoriaLogsLevelHistogram(
         effectiveQuery,
         startDate.toISOString(),
@@ -384,6 +395,7 @@ export function LogsExplorerView({
         stepSeconds,
         activeTarget!,
         activeTab.selectedLevels,
+        signal,
       ),
     enabled: Boolean(activeTarget),
     retry: false,
@@ -436,6 +448,7 @@ export function LogsExplorerView({
   }, [selectedLogIndex, entries.length]);
 
   const triggerQuery = () => {
+    setDebouncedQuery(activeTab.query);
     setCursorStack([]);
     setPage(0);
     setExpandedRows({});
@@ -494,6 +507,7 @@ export function LogsExplorerView({
     const expr = `${field}:="${escaped}"`;
     const nextQuery = injectLogsQLFilter(activeTab.query, expr);
     updateActiveTab({ query: nextQuery });
+    setDebouncedQuery(nextQuery);
     setCursorStack([]);
     setPage(0);
     setSelectedLogIndex(null);
@@ -751,7 +765,9 @@ export function LogsExplorerView({
           <Tabs
             value={activeTab.id}
             onChange={(_, val: string) => {
+              const nextTab = tabs.find((t) => t.id === val);
               setActiveTabId(val);
+              setDebouncedQuery(nextTab?.query ?? '*');
               setCursorStack([]);
               setPage(0);
             }}
@@ -802,6 +818,7 @@ export function LogsExplorerView({
                 color={activeTab.query === preset.query ? 'primary' : 'default'}
                 onClick={() => {
                   updateActiveTab({ query: preset.query });
+                  setDebouncedQuery(preset.query);
                   setCursorStack([]);
                   setPage(0);
                   setExecutedNonce((n) => n + 1);

@@ -1,0 +1,44 @@
+1. Perses Observability Stack has been deployed to namespace "{{ .Release.Namespace }}".
+
+   Services:
+   - Perses Backend:  {{ include "perses-observability.perses.serviceName" . }}.{{ .Release.Namespace }}.svc.cluster.local:8080
+   - VictoriaMetrics: {{ include "perses-observability.victoriaMetrics.serviceName" . }}.{{ .Release.Namespace }}.svc.cluster.local:8428
+   - VictoriaLogs:    {{ include "perses-observability.victoriaLogs.serviceName" . }}.{{ .Release.Namespace }}.svc.cluster.local:9428
+   {{- if .Values.vmauth.enabled }}
+   - vmauth Proxy:    {{ include "perses-observability.vmauth.serviceName" . }}.{{ .Release.Namespace }}.svc.cluster.local:8427
+   {{- end }}
+
+{{- $warnings := list }}
+{{- if and .Values.subcharts.persesEnabled (contains "changeme" (lower (default "" .Values.persesAuth.encryptionKey))) }}
+  {{- $warnings = append $warnings "persesAuth.encryptionKey is using a default placeholder value — replace with a random 32-byte key in production." }}
+{{- end }}
+{{- if and .Values.subcharts.persesEnabled .Values.persesProvisioning.bootstrapUsers (contains "changeme" (lower (default "" .Values.persesAuth.nativeAdminPassword))) }}
+  {{- $warnings = append $warnings "persesAuth.nativeAdminPassword is using a default 'changeme' password." }}
+{{- end }}
+{{- if and .Values.subcharts.persesEnabled (contains "changeme" (lower (default "" .Values.persesAuth.oidcClientSecret))) }}
+  {{- $warnings = append $warnings "persesAuth.oidcClientSecret is using a default 'changeme' secret." }}
+{{- end }}
+{{- if and .Values.vmauth.enabled (not .Values.vmauth.existingSecret) (contains "changeme" (lower (default "" .Values.vmauth.adminPassword))) }}
+  {{- $warnings = append $warnings "vmauth.adminPassword is using a default 'changeme' password." }}
+{{- end }}
+{{- if and .Values.vmauth.enabled (not .Values.vmauth.existingSecret) (contains "changeme" (lower (default "" .Values.vmauth.persesPassword))) }}
+  {{- $warnings = append $warnings "vmauth.persesPassword is using a default 'changeme' password." }}
+{{- end }}
+{{- if and .Values.vmauth.enabled (contains "changeme" (lower (default "" .Values.vmauth.flagsAuthKey))) }}
+  {{- $warnings = append $warnings "vmauth.flagsAuthKey is using a default 'changeme' key." }}
+{{- end }}
+{{- if and .Values.oauth2Proxy.enabled (contains "changeme" (lower (default "" .Values.oauth2Proxy.clientSecret))) }}
+  {{- $warnings = append $warnings "oauth2Proxy.clientSecret is using a default 'changeme' secret." }}
+{{- end }}
+{{- if and .Values.oauth2Proxy.enabled (eq (default "" .Values.oauth2Proxy.cookieSecret) "0123456789abcdef0123456789abcdef") }}
+  {{- $warnings = append $warnings "oauth2Proxy.cookieSecret is using the example placeholder value." }}
+{{- end }}
+
+{{- if $warnings }}
+
+SECURITY WARNING — Default credentials/keys detected:
+{{- range $warnings }}
+  * {{ . }}
+{{- end }}
+Override these values via --set, a custom values file, or ExternalSecrets before exposing this deployment.
+{{- end }}

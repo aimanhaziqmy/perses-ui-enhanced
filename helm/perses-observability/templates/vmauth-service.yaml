@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: vmauth-victoria-metrics-auth
+  name: {{ include "perses-observability.vmauth.serviceName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: victoria-metrics-auth

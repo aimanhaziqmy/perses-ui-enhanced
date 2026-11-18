@@ -1,5 +1,5 @@
 {{- if .Values.observabilityUi.enabled }}
-{{- $persesSvc := printf "%s.%s.svc.cluster.local:8080" (default (printf "%s-perses" .Release.Name) .Values.perses.fullnameOverride) .Release.Namespace }}
+{{- $persesSvc := printf "%s.%s.svc.cluster.local:8080" (include "perses-observability.perses.serviceName" .) .Release.Namespace }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

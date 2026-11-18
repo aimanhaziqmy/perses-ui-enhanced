@@ -1,16 +1,13 @@
 {{- if .Values.subcharts.persesEnabled }}
-{{- $vmUrl := printf "http://victoria-metrics.%s.svc.cluster.local:8428" .Release.Namespace }}
-{{- if .Values.subcharts.victoriaMetricsEnabled }}
-{{- $vmUrl = printf "http://%s.%s.svc.cluster.local:8428" (default "victoria-metrics" .Values.victoriaMetrics.server.fullnameOverride) .Release.Namespace }}
-{{- end }}
+{{- $vmUrl := printf "http://%s.%s.svc.cluster.local:8428" (include "perses-observability.victoriaMetrics.serviceName" .) .Release.Namespace }}
 {{- $vlUrl := .Values.victoriaLogs.serviceUrl }}
 {{- $useVmauth := or .Values.vmauth.enabled (ne (default "" .Values.vmauth.externalUrl) "") }}
 {{- if .Values.vmauth.enabled }}
-{{- $vlUrl = printf "http://vmauth-victoria-metrics-auth.%s.svc.cluster.local:8427" .Release.Namespace }}
+{{- $vlUrl = printf "http://%s.%s.svc.cluster.local:8427" (include "perses-observability.vmauth.serviceName" .) .Release.Namespace }}
 {{- else if .Values.vmauth.externalUrl }}
 {{- $vlUrl = .Values.vmauth.externalUrl }}
 {{- else if .Values.victoriaLogs.enabled }}
-{{- $vlUrl = printf "http://vl-victoria-logs-single-server.%s.svc.cluster.local:9428" .Release.Namespace }}
+{{- $vlUrl = printf "http://%s.%s.svc.cluster.local:9428" (include "perses-observability.victoriaLogs.serviceName" .) .Release.Namespace }}
 {{- end }}
 {{- $hasUsers := .Values.persesProvisioning.bootstrapUsers }}
 {{- $hasDatasources := and .Values.persesProvisioning.enabled .Values.persesProvisioning.seedDatasources }}

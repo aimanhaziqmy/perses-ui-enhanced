@@ -1,8 +1,5 @@
 {{- if and .Values.vmalert .Values.vmalert.enabled }}
-{{- $vmUrl := printf "http://victoria-metrics.%s.svc.cluster.local:8428" .Release.Namespace }}
-{{- if and .Values.subcharts .Values.subcharts.victoriaMetricsEnabled }}
-{{- $vmUrl = printf "http://%s.%s.svc.cluster.local:8428" (default "victoria-metrics" .Values.victoriaMetrics.server.fullnameOverride) .Release.Namespace }}
-{{- end }}
+{{- $vmUrl := printf "http://%s.%s.svc.cluster.local:8428" (include "perses-observability.victoriaMetrics.serviceName" .) .Release.Namespace }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

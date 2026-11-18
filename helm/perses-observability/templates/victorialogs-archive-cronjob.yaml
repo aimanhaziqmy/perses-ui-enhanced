@@ -1,5 +1,5 @@
 {{- if and .Values.victoriaLogs.enabled .Values.victoriaLogs.archive .Values.victoriaLogs.archive.enabled }}
-{{- $vlUrl := printf "http://vl-victoria-logs-single-server.%s.svc.cluster.local:9428" .Release.Namespace }}
+{{- $vlUrl := printf "http://%s.%s.svc.cluster.local:9428" (include "perses-observability.victoriaLogs.serviceName" .) .Release.Namespace }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:

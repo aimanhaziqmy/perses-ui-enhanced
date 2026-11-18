@@ -2,14 +2,14 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: vl-victoria-logs-single-server
+  name: {{ include "perses-observability.victoriaLogs.serviceName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: victoria-logs-single
     app.kubernetes.io/instance: vl
     app: server
 spec:
-  serviceName: vl-victoria-logs-single-server
+  serviceName: {{ include "perses-observability.victoriaLogs.serviceName" . }}
   replicas: 1
   selector:
     matchLabels:

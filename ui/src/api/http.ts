@@ -78,10 +78,11 @@ export async function throwForBadResponse(res: Response, url: string): Promise<n
   throw new Error(`HTTP ${res.status} from ${url}: ${body || res.statusText}`);
 }
 
-export async function apiGetJson<T>(url: string): Promise<T> {
+export async function apiGetJson<T>(url: string, options?: { signal?: AbortSignal }): Promise<T> {
   const res = await persesFetchFn(url, {
     method: 'GET',
     credentials: 'include',
+    signal: options?.signal,
     headers: { Accept: 'application/json' },
   });
   if (!res.ok) {
