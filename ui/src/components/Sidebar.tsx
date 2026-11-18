@@ -9,9 +9,11 @@ import {
   Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import ChevronDown from 'mdi-material-ui/ChevronDown';
+import ChevronRight from 'mdi-material-ui/ChevronRight';
 import React, { useState } from 'react';
 
-import type { SiteBrandingConfig } from '../api/persesClient';
+import type { AppViewKey, SiteBrandingConfig } from '../api/persesClient';
 import type { ThemeMode } from '../theme/persesTheme';
 import {
   MoonIcon,
@@ -113,6 +115,7 @@ export interface SidebarProps {
   isSiteAdmin: boolean;
   canManageUsers?: boolean;
   hideClusterInfra?: boolean;
+  allowedViews?: Set<AppViewKey>;
   themeMode: ThemeMode;
   onNavigate: (path: string) => void;
   onToggleCollapse: (collapsed: boolean) => void;
@@ -128,6 +131,7 @@ export const Sidebar = React.memo(function Sidebar({
   isSiteAdmin,
   canManageUsers = false,
   hideClusterInfra = false,
+  allowedViews,
   themeMode,
   onNavigate,
   onToggleCollapse,
@@ -205,18 +209,22 @@ export const Sidebar = React.memo(function Sidebar({
       )}
 
       <Box sx={{ flex: 1, overflowY: 'auto', px: 1, py: 1.25 }}>
-        {NAV_SECTIONS.filter((section) => {
-          if (section.id === 'organization' && !canManageUsers) return false;
-          if (hideClusterInfra && (section.id === 'infrastructure' || section.id === 'integrations')) return false;
-          return true;
-        }).map((section) => {
+        {NAV_SECTIONS.map((section) => {
+          if (section.id === 'organization' && !canManageUsers) return null;
+          if (hideClusterInfra && (section.id === 'infrastructure' || section.id === 'integrations')) return null;
+          const visibleItems = section.items.filter((item) => {
+            if (item.key === 'settings' && !isSiteAdmin) return false;
+            if (allowedViews && !allowedViews.has(item.key)) return false;
+            return true;
+          });
+          if (visibleItems.length === 0) return null;
           const isOpen = openSections[section.id] ?? true;
           return (
             <Box key={section.id} sx={{ mb: 0.75 }}>
               <Box
                 onClick={() => {
                   if (collapsed) {
-                    onNavigate(section.items[0].path);
+                    onNavigate(visibleItems[0].path);
                     return;
                   }
                   setOpenSections((prev) => ({ ...prev, [section.id]: !isOpen }));
@@ -242,18 +250,16 @@ export const Sidebar = React.memo(function Sidebar({
                   )}
                 </Stack>
                 {!collapsed && (
-                  <Typography variant="caption" fontSize={10} color="text.secondary">
-                    {isOpen ? '⌄' : '›'}
-                  </Typography>
+                  <Box component="span" sx={{ display: 'inline-flex', color: 'text.secondary' }}>
+                    {isOpen ? <ChevronDown sx={{ fontSize: 16 }} /> : <ChevronRight sx={{ fontSize: 16 }} />}
+                  </Box>
                 )}
               </Box>
 
               {!collapsed && (
                 <Collapse in={isOpen}>
                   <Stack spacing={0.25} sx={{ mt: 0.25 }}>
-                    {section.items
-                      .filter((item) => item.key !== 'settings' || isSiteAdmin)
-                      .map((item) => {
+                    {visibleItems.map((item) => {
                         const selected = activeKey === item.key;
                         return (
                           <Box

@@ -20,27 +20,37 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import {
+  type AppViewKey,
+  type RoleViewPermissionsConfig,
   type SiteBrandingConfig,
+  ALL_APP_VIEW_KEYS,
+  DEFAULT_ROLE_VIEW_PERMISSIONS,
   ForbiddenError,
   NO_WORKSPACE_SENTINEL,
   UnauthorizedError,
   applySiteBrandingToDocument,
   fetchClusterSiteBranding,
   fetchPersesConfig,
+  fetchPersesGlobalRoleBindings,
   fetchPersesHealth,
   fetchProjects,
+  fetchRoleViewPermissions,
   fetchUserPermissions,
   fetchWorkspaceMap,
+  getAllowedViewsForUser,
   getCurrentPersesUserClaims,
   getCurrentPersesUsername,
-  getLocalSiteBranding,
+  getDefaultRouteForAllowedViews,
   getUiCapabilities,
   logoutPerses,
   queryKeys,
+  resolveUserRolesFromBindings,
   resolveUserWorkspaces,
   saveClusterSiteBranding,
+  saveRoleViewPermissions,
   setEnforcedNamespaces,
 } from './api/persesClient';
+import { getLocalSiteBranding } from './api/persesClient';
 import { MoonIcon, SidebarCollapseIcon, SunIcon } from './components/BrandIcons';
 import { LoginView } from './components/LoginView';
 import { type NavKey, Sidebar } from './components/Sidebar';
@@ -211,7 +221,30 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     retry: false,
   });
 
+  const { data: roleViewPermissions = DEFAULT_ROLE_VIEW_PERMISSIONS, isLoading: loadingRoleViewPermissions } = useQuery({
+    queryKey: queryKeys.roleViewPermissions,
+    queryFn: fetchRoleViewPermissions,
+    enabled: sessionState === 'authenticated',
+    retry: false,
+  });
+
+  const { data: globalRoleBindings, isLoading: loadingGlobalRoleBindings } = useQuery({
+    queryKey: queryKeys.globalRoleBindings,
+    queryFn: fetchPersesGlobalRoleBindings,
+    enabled: sessionState === 'authenticated' && authEnabled,
+    retry: false,
+  });
+
   const userClaims = useMemo(() => getCurrentPersesUserClaims(), [currentUsername, sessionState]);
+  const userRoles = useMemo(
+    () => resolveUserRolesFromBindings(currentUsername, userClaims.sub, globalRoleBindings, isSiteAdmin),
+    [currentUsername, userClaims.sub, globalRoleBindings, isSiteAdmin],
+  );
+  const allowedViews = useMemo<Set<AppViewKey>>(() => {
+    if (!authEnabled) return new Set<AppViewKey>(ALL_APP_VIEW_KEYS);
+    return getAllowedViewsForUser(roleViewPermissions, userRoles, isSiteAdmin);
+  }, [authEnabled, roleViewPermissions, userRoles, isSiteAdmin]);
+  const defaultAllowedPath = useMemo(() => getDefaultRouteForAllowedViews(allowedViews), [allowedViews]);
   const userWorkspaces = useMemo(
     () => resolveUserWorkspaces(workspaceMap, currentUsername, userClaims.sub),
     [workspaceMap, currentUsername, userClaims.sub],
@@ -295,6 +328,14 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     setBranding(saved);
   }, []);
 
+  const handleSaveRolePermissions = useCallback(
+    async (next: RoleViewPermissionsConfig) => {
+      const saved = await saveRoleViewPermissions(next);
+      queryClient.setQueryData(queryKeys.roleViewPermissions, saved);
+    },
+    [queryClient],
+  );
+
   const handleLogout = useCallback(async () => {
     await logoutPerses();
     queryClient.clear();
@@ -361,6 +402,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
             isSiteAdmin={isSiteAdmin}
             canManageUsers={capabilities.canManageUsers}
             hideClusterInfra={isNamespaceScoped}
+            allowedViews={allowedViews}
             themeMode={themeMode}
             onNavigate={handleNavigate}
             onToggleCollapse={setSidebarCollapsed}
@@ -380,6 +422,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
             isSiteAdmin={isSiteAdmin}
             canManageUsers={capabilities.canManageUsers}
             hideClusterInfra={isNamespaceScoped}
+            allowedViews={allowedViews}
             themeMode={themeMode}
             onNavigate={handleNavigate}
             onToggleCollapse={setSidebarCollapsed}
@@ -505,6 +548,15 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                 onToggleFullscreen={toggleFullscreen}
               />
             </RouteView>
+          ) : authEnabled && (loadingPermissions || loadingRoleViewPermissions || loadingGlobalRoleBindings) && !allowedViews.has(activeKey) ? (
+            <ViewLoadingState message="Checking view permissions..." />
+          ) : authEnabled && allowedViews.size === 0 ? (
+            <ViewForbiddenState
+              description="No sidebar views are permitted for your role. Contact your site administrator."
+              onBack={handleLogout}
+            />
+          ) : authEnabled && !allowedViews.has(activeKey) ? (
+            <Navigate to={defaultAllowedPath} replace />
           ) : (
             <Routes>
               <Route
@@ -650,7 +702,13 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                         onBack={() => navigate('/dashboards')}
                       />
                     ) : (
-                      <SiteSettingsView branding={branding} onSaveBranding={handleSaveBranding} canEdit={isSiteAdmin} />
+                      <SiteSettingsView
+                        branding={branding}
+                        onSaveBranding={handleSaveBranding}
+                        rolePermissions={roleViewPermissions}
+                        onSaveRolePermissions={handleSaveRolePermissions}
+                        canEdit={isSiteAdmin}
+                      />
                     )}
                   </RouteView>
                 }
@@ -663,7 +721,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
                   </RouteView>
                 }
               />
-              <Route path="*" element={<Navigate to="/dashboards" replace />} />
+              <Route path="*" element={<Navigate to={defaultAllowedPath} replace />} />
             </Routes>
           )}
         </Box>

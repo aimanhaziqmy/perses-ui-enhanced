@@ -35,39 +35,45 @@ import {
   Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import ArrowDown from 'mdi-material-ui/ArrowDown';
+import ArrowLeft from 'mdi-material-ui/ArrowLeft';
+import ArrowRight from 'mdi-material-ui/ArrowRight';
 import DeleteOutline from 'mdi-material-ui/DeleteOutline';
+import DeleteSweep from 'mdi-material-ui/DeleteSweep';
 import Download from 'mdi-material-ui/Download';
 import PencilOutline from 'mdi-material-ui/PencilOutline';
 import Plus from 'mdi-material-ui/Plus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type {
   HistogramGroupBy,
+  LogDatasourceAdapter,
   LogLevel,
   LogPresetItem,
-  VictoriaLogEntry,
+  LogQueryResult,
+  NormalizedLogEntry,
   VictoriaLogGroupHitBucket,
   VictoriaLogHitBucket,
-  VictoriaLogsQueryResult,
 } from '../api/persesClient';
 import {
   ALL_LOG_LEVELS,
   DEFAULT_LOG_PRESETS,
   ForbiddenError,
   buildLogsQLLevelFilter,
-  classifyLogLevel,
+  createLogDatasourceAdapter,
   datasourceTargetKey,
   fetchLogPresetsConfig,
   fetchVictoriaLogsChunked,
   hasCustomLimitOrTransformPipe,
   injectLogsQLFilter,
-  queryVictoriaLogs,
   queryVictoriaLogsFieldHistogram,
   queryVictoriaLogsLevelHistogram,
   saveLogPresetsConfig,
   setLocalLogPresets,
+  toFlatLogRecord,
   useDatasourceTargets,
 } from '../api/persesClient';
 import type { ExportFormat } from '../utils/exportRecords';
@@ -124,7 +130,7 @@ function formatFullTs(date: Date): string {
   return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}.${ms}`;
 }
 
-function buildFallbackBuckets(entries: VictoriaLogEntry[], startMs: number, endMs: number): VictoriaLogHitBucket[] {
+function buildFallbackBuckets(entries: NormalizedLogEntry[], startMs: number, endMs: number): VictoriaLogHitBucket[] {
   const bucketCount = 48;
   const span = Math.max(1000, endMs - startMs);
   const stepMs = span / bucketCount;
@@ -137,11 +143,10 @@ function buildFallbackBuckets(entries: VictoriaLogEntry[], startMs: number, endM
   }));
 
   for (const entry of entries) {
-    const t = new Date(entry._time).getTime();
+    const t = entry.timestampMs || new Date(entry.timestamp).getTime();
     if (!Number.isFinite(t)) continue;
     const idx = Math.min(bucketCount - 1, Math.max(0, Math.floor((t - startMs) / stepMs)));
-    const lvl = classifyLogLevel(entry);
-    bucketsCounts[idx][lvl] += 1;
+    bucketsCounts[idx][entry.severity] += 1;
   }
 
   return bucketsCounts.map((counts, i) => {
@@ -251,6 +256,23 @@ export function LogsExplorerView({
   const exportAbortRef = useRef<AbortController | null>(null);
 
   const LOG_BATCH_SIZE = 200;
+  const LIVE_POLL_INTERVAL_MS = 1000;
+  const LIVE_FLUSH_INTERVAL_MS = 250;
+  const MAX_LIVE_BUFFER_LINES = 2000;
+
+  // Live Tail state & refs
+  const [liveMode, setLiveMode] = useState(false);
+  const [liveEntries, setLiveEntries] = useState<NormalizedLogEntry[]>([]);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const livePendingBufferRef = useRef<NormalizedLogEntry[]>([]);
+  const liveScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const isProgrammaticScrollRef = useRef(false);
+
+  const logAdapter: LogDatasourceAdapter | null = useMemo(
+    () => (activeTarget ? createLogDatasourceAdapter(activeTarget) : null),
+    [activeTarget],
+  );
 
   const { data: presets = DEFAULT_LOG_PRESETS } = useQuery<LogPresetItem[], Error>({
     queryKey: ['perses', 'log-presets-config'],
@@ -315,7 +337,7 @@ export function LogsExplorerView({
     isInitialLoading: loadingLogs,
     isFetching: fetchingLogs,
     error: logsError,
-  } = useQuery<VictoriaLogsQueryResult, Error>({
+  } = useQuery<LogQueryResult, Error>({
     queryKey: [
       'vlogs',
       'query',
@@ -329,15 +351,15 @@ export function LogsExplorerView({
       executedNonce,
     ],
     queryFn: ({ signal }) =>
-      queryVictoriaLogs(
-        effectiveQuery,
-        LOG_BATCH_SIZE,
-        startDate.toISOString(),
-        cursorEndIso,
-        activeTarget!,
-        { sortDesc: true, signal },
-      ),
-    enabled: Boolean(activeTarget),
+      logAdapter!.queryLogs({
+        query: effectiveQuery,
+        limit: LOG_BATCH_SIZE,
+        startIso: startDate.toISOString(),
+        endIso: cursorEndIso,
+        sortDesc: true,
+        signal,
+      }),
+    enabled: Boolean(logAdapter) && !liveMode,
   });
 
   const spanSeconds = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / 1000));
@@ -422,13 +444,105 @@ export function LogsExplorerView({
 
   const maxBucketCount = Math.max(1, ...effectiveBuckets.map((b) => b.count));
 
-  const entries = logsResult?.entries ?? [];
+  // Live Tail: 1s incremental delta-polling + 250ms batched UI flush + 2,000-line FIFO ring buffer
+  useEffect(() => {
+    if (!liveMode || !logAdapter) return;
+
+    setLiveError(null);
+    setLiveEntries([]);
+    livePendingBufferRef.current = [];
+
+    const handle = logAdapter.startLiveTail({
+      query: effectiveQuery,
+      pollIntervalMs: LIVE_POLL_INTERVAL_MS,
+      initialLookbackSeconds: 60,
+      limitPerPoll: 500,
+      onEntries: (batch) => {
+        if (batch.length > 0) {
+          livePendingBufferRef.current.push(...batch);
+        }
+      },
+      onError: (err) => {
+        setLiveError(err.message);
+      },
+    });
+
+    const flushTimer = window.setInterval(() => {
+      if (livePendingBufferRef.current.length === 0) return;
+      const batch = livePendingBufferRef.current.splice(0);
+      setLiveEntries((prev) => {
+        const combined = prev.length === 0 ? batch : [...prev, ...batch];
+        return combined.length > MAX_LIVE_BUFFER_LINES
+          ? combined.slice(combined.length - MAX_LIVE_BUFFER_LINES)
+          : combined;
+      });
+    }, LIVE_FLUSH_INTERVAL_MS);
+
+    return () => {
+      handle.stop();
+      window.clearInterval(flushTimer);
+      livePendingBufferRef.current = [];
+    };
+  }, [liveMode, logAdapter, effectiveQuery]);
+
+  const entries: NormalizedLogEntry[] = liveMode ? liveEntries : (logsResult?.entries ?? []);
   const pagedEntries = useMemo(() => {
+    if (liveMode) return entries;
     const start = page * rowsPerPage;
     return entries.slice(start, start + rowsPerPage);
-  }, [entries, page, rowsPerPage]);
+  }, [entries, page, rowsPerPage, liveMode]);
 
-  const selectedEntry = selectedLogIndex !== null ? entries[selectedLogIndex] ?? null : null;
+  const liveVirtualizer = useVirtualizer({
+    count: liveMode ? entries.length : 0,
+    getScrollElement: () => liveScrollContainerRef.current,
+    estimateSize: () => (lineBreak ? 56 : 36),
+    overscan: 12,
+  });
+
+  useEffect(() => {
+    if (!liveMode || !autoScroll || entries.length === 0) return;
+    isProgrammaticScrollRef.current = true;
+    liveVirtualizer.scrollToIndex(entries.length - 1, { align: 'end' });
+    const raf = window.requestAnimationFrame(() => {
+      isProgrammaticScrollRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [liveMode, autoScroll, entries, liveVirtualizer]);
+
+  const handleLiveScroll = useCallback(() => {
+    if (!liveMode || isProgrammaticScrollRef.current) return;
+    const el = liveScrollContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom > 48 && autoScroll) {
+      setAutoScroll(false);
+    } else if (distanceFromBottom <= 16 && !autoScroll) {
+      setAutoScroll(true);
+    }
+  }, [liveMode, autoScroll]);
+
+  const handleResumeLiveScroll = useCallback(() => {
+    setAutoScroll(true);
+    if (entries.length > 0) {
+      isProgrammaticScrollRef.current = true;
+      liveVirtualizer.scrollToIndex(entries.length - 1, { align: 'end' });
+      window.requestAnimationFrame(() => {
+        isProgrammaticScrollRef.current = false;
+      });
+    }
+  }, [entries.length, liveVirtualizer]);
+
+  const handleClearLiveLogs = useCallback(() => {
+    livePendingBufferRef.current = [];
+    setLiveEntries([]);
+    setExpandedRows({});
+    setSelectedLogIndex(null);
+  }, []);
+
+  const selectedEntry = useMemo(
+    () => (selectedLogIndex !== null && entries[selectedLogIndex] ? toFlatLogRecord(entries[selectedLogIndex]) : null),
+    [selectedLogIndex, entries],
+  );
 
   useEffect(() => {
     if (selectedLogIndex === null) return;
@@ -514,7 +628,7 @@ export function LogsExplorerView({
     setExecutedNonce((n) => n + 1);
   };
 
-  const oldestEntryTs = entries.length > 0 ? String(entries[entries.length - 1]._time ?? '').trim() : '';
+  const oldestEntryTs = entries.length > 0 ? String(entries[entries.length - 1].timestamp ?? '').trim() : '';
   const hasOlderBatch =
     canCursorPage &&
     entries.length >= LOG_BATCH_SIZE &&
@@ -564,7 +678,8 @@ export function LogsExplorerView({
     if (!activeTarget) return;
 
     if (scope === 'loaded') {
-      const count = exportRecordsToFile(entries as Record<string, unknown>[], format, 'victorialogs-batch');
+      const flatRecords = entries.map((e) => toFlatLogRecord(e));
+      const count = exportRecordsToFile(flatRecords as Record<string, unknown>[], format, 'victorialogs-batch');
       setFeedback({
         kind: 'success',
         text: `Exported ${count.toLocaleString()} log record${count === 1 ? '' : 's'} as ${format.toUpperCase()}.`,
@@ -730,7 +845,7 @@ export function LogsExplorerView({
               No VictoriaLogs data source configured
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Add a VictoriaLogsDatasource in Integrations â†’ Data sources to query logs, filter levels, and save shared
+              Add a VictoriaLogsDatasource in Integrations → Data sources to query logs, filter levels, and save shared
               presets.
             </Typography>
             <Button variant="contained" onClick={() => navigate('/datasources')}>
@@ -927,10 +1042,48 @@ export function LogsExplorerView({
               variant="contained"
               color="primary"
               onClick={triggerQuery}
-              disabled={fetchingLogs}
+              disabled={fetchingLogs || liveMode}
               sx={{ px: 3 }}
             >
               {fetchingLogs ? 'Querying...' : 'Query'}
+            </Button>
+
+            <Button
+              variant={liveMode ? 'contained' : 'outlined'}
+              color={liveMode ? 'success' : 'inherit'}
+              onClick={() => {
+                setLiveMode((prev) => {
+                  const next = !prev;
+                  if (next) {
+                    setAutoScroll(true);
+                    setLiveError(null);
+                    setSelectedLogIndex(null);
+                    setExpandedRows({});
+                  }
+                  return next;
+                });
+              }}
+              startIcon={
+                <Box
+                  component="span"
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    bgcolor: liveMode ? '#FFFFFF' : '#22C55E',
+                    ...(liveMode && {
+                      '@keyframes livePulse': {
+                        '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+                        '50%': { opacity: 0.4, transform: 'scale(1.35)' },
+                      },
+                      animation: 'livePulse 1.2s ease-in-out infinite',
+                    }),
+                  }}
+                />
+              }
+              sx={{ px: 2, whiteSpace: 'nowrap' }}
+            >
+              {liveMode ? 'Live (ON)' : 'Live'}
             </Button>
           </Stack>
 
@@ -999,7 +1152,8 @@ export function LogsExplorerView({
         </CardContent>
       </Card>
 
-      {logsError && <Alert severity="error">VictoriaLogs query failed: {logsError.message}</Alert>}
+      {logsError && !liveMode && <Alert severity="error">Log query failed: {logsError.message}</Alert>}
+      {liveError && liveMode && <Alert severity="warning">Live tail poll warning: {liveError}</Alert>}
 
       {/* Results Toolbar + Log Stream Table */}
       <Card>
@@ -1046,10 +1200,46 @@ export function LogsExplorerView({
             />
           </Stack>
 
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Typography variant="caption" color="text.secondary">
-              Duration : <strong>{logsResult?.durationMs ?? 0} ms</strong>
-            </Typography>
+          <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+            {liveMode && (
+              <>
+                <Chip
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                  label={`Live Tail · ${entries.length.toLocaleString()} / ${MAX_LIVE_BUFFER_LINES.toLocaleString()} FIFO`}
+                  sx={{ height: 24, fontSize: 11, fontFamily: 'monospace' }}
+                />
+                {!autoScroll && (
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="warning"
+                    startIcon={<ArrowDown fontSize="small" />}
+                    onClick={handleResumeLiveScroll}
+                    sx={{ py: 0.35, fontSize: 12 }}
+                  >
+                    Resume Live Scroll
+                  </Button>
+                )}
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="inherit"
+                  startIcon={<DeleteSweep fontSize="small" />}
+                  onClick={handleClearLiveLogs}
+                  disabled={entries.length === 0}
+                  sx={{ py: 0.35, fontSize: 12 }}
+                >
+                  Clear
+                </Button>
+              </>
+            )}
+            {!liveMode && (
+              <Typography variant="caption" color="text.secondary">
+                Duration : <strong>{logsResult?.durationMs ?? 0} ms</strong>
+              </Typography>
+            )}
             <Typography variant="caption" color="text.secondary">
               Count : <strong>{entries.length}</strong>
             </Typography>
@@ -1109,7 +1299,7 @@ export function LogsExplorerView({
           </Stack>
         </Box>
 
-        {loadingLogs ? (
+        {!liveMode && loadingLogs ? (
           <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ py: 8 }}>
             <CircularProgress size={26} />
             <Typography variant="caption" color="text.secondary">
@@ -1119,8 +1309,130 @@ export function LogsExplorerView({
         ) : entries.length === 0 ? (
           <Box sx={{ p: 4, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">
-              No logs matched query <code>{effectiveQuery}</code> in the selected time range.
+              {liveMode
+                ? `Waiting for live logs matching "${effectiveQuery}"...`
+                : <>No logs matched query <code>{effectiveQuery}</code> in the selected time range.</>}
             </Typography>
+          </Box>
+        ) : liveMode ? (
+          <Box sx={{ position: 'relative' }}>
+            <Box
+              ref={liveScrollContainerRef}
+              onScroll={handleLiveScroll}
+              sx={{
+                height: 560,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                fontFamily: 'monospace',
+              }}
+            >
+              <Box
+                sx={{
+                  height: `${liveVirtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {liveVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const idx = virtualRow.index;
+                  const entry = entries[idx];
+                  if (!entry) return null;
+                  const isSelected = selectedLogIndex === idx;
+                  return (
+                    <Box
+                      key={virtualRow.key}
+                      data-index={idx}
+                      ref={liveVirtualizer.measureElement}
+                      onClick={() => setSelectedLogIndex(idx)}
+                      sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualRow.start}px)`,
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 1.25,
+                        px: 1.5,
+                        py: 0.6,
+                        cursor: 'pointer',
+                        borderBottom: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
+                        bgcolor: isSelected ? muiTheme.palette.surface.bgActiveNav : 'transparent',
+                        '&:hover': { bgcolor: isSelected ? muiTheme.palette.surface.bgActiveNav : muiTheme.palette.surface.bgHover },
+                      }}
+                    >
+                      {showLineNum && (
+                        <Typography
+                          variant="caption"
+                          sx={{ width: 44, flexShrink: 0, color: 'text.secondary', fontFamily: 'monospace', pt: 0.15 }}
+                        >
+                          {idx + 1}
+                        </Typography>
+                      )}
+                      <Box sx={{ width: 58, flexShrink: 0, pt: 0.1 }}>
+                        <LevelBadge level={entry.severity} />
+                      </Box>
+                      {showLogTime && (
+                        <Typography
+                          variant="caption"
+                          sx={{ width: 138, flexShrink: 0, fontFamily: 'monospace', color: 'text.secondary', whiteSpace: 'nowrap', pt: 0.15 }}
+                        >
+                          {formatCompactTs(entry.timestamp)}
+                        </Typography>
+                      )}
+                      {displayMode === 'table' && (
+                        <Typography
+                          variant="caption"
+                          noWrap
+                          sx={{ width: 170, flexShrink: 0, fontFamily: 'monospace', color: 'text.secondary', pt: 0.15 }}
+                        >
+                          {[entry.namespace, entry.pod].filter(Boolean).join(' / ') || '-'}
+                        </Typography>
+                      )}
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          flex: 1,
+                          minWidth: 0,
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          color: 'text.primary',
+                          whiteSpace: lineBreak ? 'pre-wrap' : 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          wordBreak: 'break-word',
+                          pt: 0.1,
+                        }}
+                      >
+                        {entry.message || JSON.stringify(entry.labels)}
+                      </Typography>
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Box>
+
+            {!autoScroll && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  bottom: 14,
+                  right: 20,
+                  zIndex: 4,
+                }}
+              >
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="warning"
+                  startIcon={<ArrowDown fontSize="small" />}
+                  onClick={handleResumeLiveScroll}
+                  sx={{ boxShadow: 4 }}
+                >
+                  Resume Live Scroll
+                </Button>
+              </Box>
+            )}
           </Box>
         ) : displayMode === 'original' ? (
           <TableContainer sx={{ maxHeight: 580, overflowX: 'hidden' }}>
@@ -1140,13 +1452,13 @@ export function LogsExplorerView({
                   const rowNumber = globalIndex + 1;
                   const isExpanded = Boolean(expandedRows[globalIndex]);
                   const isSelected = selectedLogIndex === globalIndex;
-                  const lvl = classifyLogLevel(entry);
-                  const extraFields = Object.entries(entry)
+                  const flatRecord = toFlatLogRecord(entry);
+                  const extraFields = Object.entries(flatRecord)
                     .filter(([k, v]) => k !== '_time' && k !== '_stream_id' && v !== '')
                     .sort(([a], [b]) => a.localeCompare(b));
 
                   return (
-                    <React.Fragment key={`${entry._time}-${rowNumber}`}>
+                    <React.Fragment key={`${entry.timestamp}-${rowNumber}`}>
                       <TableRow
                         hover
                         selected={isSelected}
@@ -1173,7 +1485,7 @@ export function LogsExplorerView({
                           </TableCell>
                         )}
                         <TableCell sx={{ verticalAlign: 'top', pt: 0.9 }}>
-                          <LevelBadge level={lvl} />
+                          <LevelBadge level={entry.severity} />
                         </TableCell>
                         {showLogTime && (
                           <TableCell
@@ -1185,7 +1497,7 @@ export function LogsExplorerView({
                               fontSize: 12,
                             }}
                           >
-                            {formatCompactTs(entry._time)}
+                            {formatCompactTs(entry.timestamp)}
                           </TableCell>
                         )}
                         <TableCell sx={{ py: 0.65, overflow: 'hidden' }}>
@@ -1261,20 +1573,21 @@ export function LogsExplorerView({
                                 sx={{ mb: 0.75 }}
                               >
                                 <Typography variant="caption" fontWeight={700} color="text.secondary">
-                                  Structured Log Fields ({Object.keys(entry).length} fields)
+                                  Structured Log Fields ({Object.keys(flatRecord).length} fields)
                                 </Typography>
                                 <Button
                                   size="small"
                                   variant="text"
+                                  endIcon={<ArrowRight fontSize="small" />}
                                   onClick={() => setSelectedLogIndex(globalIndex)}
                                   sx={{ fontSize: 11.5, py: 0 }}
                                 >
-                                  Open Detail Drawer â†’
+                                  Open Detail Drawer
                                 </Button>
                               </Stack>
                               <Table size="small" sx={{ bgcolor: muiTheme.palette.surface.bgSurface, borderRadius: 1 }}>
                                 <TableBody>
-                                  {Object.entries(entry)
+                                  {Object.entries(flatRecord)
                                     .sort(([a], [b]) => a.localeCompare(b))
                                     .map(([k, v]) => (
                                       <TableRow key={k} hover>
@@ -1322,37 +1635,35 @@ export function LogsExplorerView({
                   <TableCell width={70}>Level</TableCell>
                   <TableCell width={160}>Timestamp</TableCell>
                   <TableCell width={200}>Namespace / Pod</TableCell>
-                  <TableCell>Message (_msg)</TableCell>
+                  <TableCell>Message</TableCell>
                   <TableCell width={220}>Stream</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {pagedEntries.map((entry, idx) => {
                   const globalIndex = page * rowsPerPage + idx;
-                  const lvl = classifyLogLevel(entry);
                   return (
                     <TableRow
-                      key={`${entry._time}-${idx}`}
+                      key={`${entry.timestamp}-${idx}`}
                       hover
                       selected={selectedLogIndex === globalIndex}
                       onClick={() => setSelectedLogIndex(globalIndex)}
                       sx={{ cursor: 'pointer' }}
                     >
                       <TableCell>
-                        <LevelBadge level={lvl} />
+                        <LevelBadge level={entry.severity} />
                       </TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                        {formatCompactTs(entry._time)}
+                        {formatCompactTs(entry.timestamp)}
                       </TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', fontSize: 11.5 }}>
-                        {[entry['kubernetes.pod_namespace'], entry['kubernetes.pod_name']].filter(Boolean).join(' / ') ||
-                          '-'}
+                        {[entry.namespace, entry.pod].filter(Boolean).join(' / ') || '-'}
                       </TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', fontSize: 12, wordBreak: 'break-word' }}>
-                        {entry._msg}
+                        {entry.message}
                       </TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', fontSize: 11, color: 'text.secondary' }}>
-                        {entry._stream}
+                        {entry.stream}
                       </TableCell>
                     </TableRow>
                   );
@@ -1362,18 +1673,19 @@ export function LogsExplorerView({
           </TableContainer>
         )}
 
-        <Box
-          sx={{
-            px: 2,
-            py: 0.5,
-            borderTop: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 1,
-          }}
-        >
+        {!liveMode && (
+          <Box
+            sx={{
+              px: 2,
+              py: 0.5,
+              borderTop: `1px solid ${muiTheme.palette.surface.borderSubtle}`,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1,
+            }}
+          >
           {canCursorPage ? (
             <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
               <Chip
@@ -1395,16 +1707,18 @@ export function LogsExplorerView({
                 variant="outlined"
                 disabled={cursorStack.length === 0 || fetchingLogs}
                 onClick={handleLoadNewerBatch}
+                startIcon={<ArrowLeft fontSize="small" />}
               >
-                â† Newer
+                Newer
               </Button>
               <Button
                 size="small"
                 variant="outlined"
                 disabled={!hasOlderBatch || fetchingLogs}
                 onClick={handleLoadOlderBatch}
+                endIcon={<ArrowRight fontSize="small" />}
               >
-                Older â†’
+                Older
               </Button>
             </Stack>
           ) : (
@@ -1426,6 +1740,7 @@ export function LogsExplorerView({
             rowsPerPageOptions={[15, 30, 50, 100]}
           />
         </Box>
+        )}
       </Card>
 
       {/* Create / Edit Log Preset Dialog */}
