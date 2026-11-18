@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -23,6 +24,11 @@ function persesWebpackFederationInterop(): Plugin {
 
 export default defineConfig({
   plugins: [react(), persesWebpackFederationInterop()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
+  },
   define: {
     global: 'globalThis',
   },
@@ -46,7 +52,25 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: false,
+    sourcemap: 'hidden',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router-dom/')) {
+            return 'vendor-react';
+          }
+          if (id.includes('node_modules/@mui/') || id.includes('node_modules/@emotion/')) {
+            return 'vendor-mui';
+          }
+          if (id.includes('node_modules/echarts/') || id.includes('node_modules/zrender/')) {
+            return 'vendor-echarts';
+          }
+          if (id.includes('node_modules/@perses-dev/')) {
+            return 'vendor-perses';
+          }
+        },
+      },
+    },
   },
 });
 

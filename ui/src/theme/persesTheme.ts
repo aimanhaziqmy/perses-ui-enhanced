@@ -2,7 +2,7 @@ import { createTheme } from '@mui/material';
 import type { Theme } from '@mui/material';
 import type { PersesChartsTheme } from '@perses-dev/components';
 import { generateChartsTheme, getTheme } from '@perses-dev/components';
-import type { SurfacePalette } from './theme';
+import type { SurfacePalette } from './surface';
 
 export type ThemeMode = 'light' | 'dark';
 
