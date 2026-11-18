@@ -41,6 +41,7 @@ import {
   fetchTraceById,
   fetchTraceOperations,
   fetchTraceServices,
+  queryKeys,
   searchTraces,
   useDatasourceTargets,
 } from '../api/persesClient';
@@ -115,7 +116,7 @@ export function TracesExplorerView() {
   const [copiedId, setCopiedId] = useState<boolean>(false);
 
   const { data: services = [], isLoading: loadingServices } = useQuery<string[], Error>({
-    queryKey: ['traces', 'services', selectedTargetKey],
+    queryKey: queryKeys.traceServices(selectedTargetKey),
     queryFn: () => fetchTraceServices(activeTarget!),
     enabled: Boolean(activeTarget),
   });
@@ -128,7 +129,7 @@ export function TracesExplorerView() {
   }, [services, service]);
 
   const { data: operations = [] } = useQuery<string[], Error>({
-    queryKey: ['traces', 'operations', selectedTargetKey, service],
+    queryKey: queryKeys.traceOperations(selectedTargetKey, service),
     queryFn: () => fetchTraceOperations(activeTarget!, service),
     enabled: Boolean(activeTarget && service),
   });
@@ -145,9 +146,7 @@ export function TracesExplorerView() {
     isFetching: fetchingTraces,
     error: tracesError,
   } = useQuery<TraceDetail[], Error>({
-    queryKey: [
-      'traces',
-      'search',
+    queryKey: queryKeys.traceSearch(
       selectedTargetKey,
       service,
       operation,
@@ -157,7 +156,7 @@ export function TracesExplorerView() {
       rangeMinutes,
       limit,
       searchNonce,
-    ],
+    ),
     queryFn: () =>
       searchTraces(activeTarget!, {
         service: service || undefined,
@@ -178,7 +177,7 @@ export function TracesExplorerView() {
   );
 
   const { data: fetchedTraceDetail, isFetching: loadingTraceDetail } = useQuery<TraceDetail, Error>({
-    queryKey: ['traces', 'detail', selectedTargetKey, selectedTraceId],
+    queryKey: queryKeys.traceDetail(selectedTargetKey, selectedTraceId ?? ''),
     queryFn: () => fetchTraceById(activeTarget!, selectedTraceId!),
     enabled: Boolean(
       activeTarget &&

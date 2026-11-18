@@ -70,6 +70,7 @@ import {
   fetchVictoriaLogsChunked,
   hasCustomLimitOrTransformPipe,
   injectLogsQLFilter,
+  queryKeys,
   queryVictoriaLogsFieldHistogram,
   queryVictoriaLogsLevelHistogram,
   saveLogPresetsConfig,
@@ -317,7 +318,7 @@ export function LogsExplorerView({
   );
 
   const { data: presets = DEFAULT_LOG_PRESETS } = useQuery<LogPresetItem[], Error>({
-    queryKey: ['perses', 'log-presets-config'],
+    queryKey: queryKeys.logPresetsConfig,
     queryFn: fetchLogPresetsConfig,
   });
 
@@ -415,9 +416,7 @@ export function LogsExplorerView({
     isFetching: fetchingLogs,
     error: logsError,
   } = useQuery<LogQueryResult, Error>({
-    queryKey: [
-      'vlogs',
-      'query',
+    queryKey: queryKeys.logsQuery(
       selectedTargetKey,
       activeTab.id,
       effectiveQuery,
@@ -426,7 +425,7 @@ export function LogsExplorerView({
       activeTab.customEndIso ?? '',
       cursorEndIso,
       executedNonce,
-    ],
+    ),
     queryFn: ({ signal }) =>
       logAdapter!.queryLogs({
         query: effectiveQuery,
@@ -447,9 +446,7 @@ export function LogsExplorerView({
     { buckets: VictoriaLogGroupHitBucket[]; seriesKeys: string[] },
     Error
   >({
-    queryKey: [
-      'vlogs',
-      'group-histogram',
+    queryKey: queryKeys.logsGroupHistogram(
       histogramGroupBy,
       selectedTargetKey,
       activeTab.id,
@@ -458,7 +455,7 @@ export function LogsExplorerView({
       activeTab.customStartIso ?? '',
       activeTab.customEndIso ?? '',
       executedNonce,
-    ],
+    ),
     queryFn: ({ signal }) =>
       queryVictoriaLogsFieldHistogram(
         effectiveQuery,
@@ -474,9 +471,7 @@ export function LogsExplorerView({
   });
 
   const { data: histogramData } = useQuery<{ buckets: VictoriaLogHitBucket[]; stacked: boolean }, Error>({
-    queryKey: [
-      'vlogs',
-      'level-histogram',
+    queryKey: queryKeys.logsLevelHistogram(
       selectedTargetKey,
       activeTab.id,
       effectiveQuery,
@@ -485,7 +480,7 @@ export function LogsExplorerView({
       activeTab.customEndIso ?? '',
       activeTab.selectedLevels.join(','),
       executedNonce,
-    ],
+    ),
     queryFn: ({ signal }) =>
       queryVictoriaLogsLevelHistogram(
         effectiveQuery,

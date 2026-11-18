@@ -19,7 +19,7 @@ import ContentCopy from 'mdi-material-ui/ContentCopy';
 import KeyVariant from 'mdi-material-ui/KeyVariant';
 import ShieldAccount from 'mdi-material-ui/ShieldAccount';
 
-import { fetchPersesConfig } from '../api/persesClient';
+import { fetchPersesConfig, queryKeys } from '../api/persesClient';
 
 type SsoPresetKey = 'keycloak' | 'oidc' | 'google' | 'github';
 
@@ -81,7 +81,7 @@ const SSO_PRESETS: Record<
 export function SsoSettingsCard() {
   const theme = useTheme();
   const { data: config } = useQuery({
-    queryKey: ['perses-config'],
+    queryKey: queryKeys.persesConfig,
     queryFn: fetchPersesConfig,
     retry: 1,
   });

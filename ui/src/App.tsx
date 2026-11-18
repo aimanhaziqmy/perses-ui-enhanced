@@ -33,6 +33,7 @@ import {
   fetchPersesConfig,
   fetchPersesGlobalRoleBindings,
   fetchPersesHealth,
+  fetchPersesUser,
   fetchProjects,
   fetchRoleViewPermissions,
   fetchUserPermissions,
@@ -138,7 +139,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
   const queryClient = useQueryClient();
 
   const activeKey = navKeyFromPath(location.pathname);
-  const searchParams = new URLSearchParams(location.search);
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const isEmbedRoute = location.pathname.startsWith('/embed/') || searchParams.get('embed') === '1';
   const isPublicEmbed = isEmbedRoute && searchParams.get('public') === '1';
 
@@ -235,6 +236,19 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     retry: false,
   });
 
+  const { data: currentUserResource } = useQuery({
+    queryKey: queryKeys.persesUser(currentUsername),
+    queryFn: () => fetchPersesUser(currentUsername),
+    enabled:
+      sessionState === 'authenticated' &&
+      authEnabled &&
+      Boolean(workspaceMap?.enabled) &&
+      !isSiteAdmin &&
+      Boolean(currentUsername) &&
+      currentUsername !== 'guest',
+    retry: false,
+  });
+
   const userClaims = useMemo(() => getCurrentPersesUserClaims(), [currentUsername, sessionState]);
   const userRoles = useMemo(
     () => resolveUserRolesFromBindings(currentUsername, userClaims.sub, globalRoleBindings, isSiteAdmin),
@@ -245,9 +259,24 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     return getAllowedViewsForUser(roleViewPermissions, userRoles, isSiteAdmin);
   }, [authEnabled, roleViewPermissions, userRoles, isSiteAdmin]);
   const defaultAllowedPath = useMemo(() => getDefaultRouteForAllowedViews(allowedViews), [allowedViews]);
+  const workspaceSubjects = useMemo(() => {
+    const out: string[] = [];
+    if (userClaims.sub) out.push(userClaims.sub);
+    const oauthList = currentUserResource?.spec?.oauthProviders ?? [];
+    for (const p of oauthList) {
+      if (p.subject) out.push(p.subject);
+      if (p.email) out.push(p.email);
+    }
+    const fullName = [currentUserResource?.spec?.firstName, currentUserResource?.spec?.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    if (fullName) out.push(fullName);
+    return out;
+  }, [userClaims.sub, currentUserResource]);
   const userWorkspaces = useMemo(
-    () => resolveUserWorkspaces(workspaceMap, currentUsername, userClaims.sub),
-    [workspaceMap, currentUsername, userClaims.sub],
+    () => resolveUserWorkspaces(workspaceMap, currentUsername, workspaceSubjects),
+    [workspaceMap, currentUsername, workspaceSubjects],
   );
   const isNamespaceScoped = Boolean(workspaceMap?.enabled && authEnabled && !isSiteAdmin);
   const [selectedWorkspaceNs, setSelectedWorkspaceNs] = useState<string>('');
@@ -265,7 +294,10 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
     return [userWorkspaces[0].namespace];
   }, [isNamespaceScoped, userWorkspaces, selectedWorkspaceNs]);
 
-  setEnforcedNamespaces(activeScopedNamespaces);
+  useEffect(() => {
+    setEnforcedNamespaces(activeScopedNamespaces);
+    void queryClient.removeQueries({ queryKey: queryKeys.proxyPrefix });
+  }, [activeScopedNamespaces, queryClient]);
 
   const workspaceContext = useMemo(() => {
     const urlProject = searchParams.get('project')?.trim() || '';

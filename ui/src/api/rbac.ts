@@ -21,6 +21,10 @@ export function fetchPersesUsers(): Promise<UserResource[]> {
   return apiGetJson<UserResource[]>('/api/v1/users');
 }
 
+export function fetchPersesUser(username: string): Promise<UserResource> {
+  return apiGetJson<UserResource>(`/api/v1/users/${encodeURIComponent(username)}`);
+}
+
 export function createPersesUser(user: UserResource): Promise<UserResource> {
   return apiSendJson<UserResource>('/api/v1/users', 'POST', user);
 }

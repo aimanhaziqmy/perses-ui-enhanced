@@ -33,6 +33,7 @@ import type { LiveHostRecord } from '../api/persesClient';
 import {
   datasourceTargetKey,
   fetchLiveClusterHosts,
+  queryKeys,
   useDatasourceTargets,
 } from '../api/persesClient';
 import { OsBadgeIcon } from './BrandIcons';
@@ -94,7 +95,7 @@ export function HostsView() {
     error,
     refetch,
   } = useQuery<LiveHostRecord[], Error>({
-    queryKey: ['vm', 'live-cluster-hosts', selectedTargetKey],
+    queryKey: queryKeys.clusterHosts(selectedTargetKey),
     queryFn: () => fetchLiveClusterHosts(activeTarget!),
     enabled: Boolean(activeTarget),
     refetchInterval: 30000,
