@@ -1,4 +1,4 @@
-import { getNamespaceScopeKey } from '@/api/workspace';
+import { getNamespaceScopeKey } from '@/lib/api/workspace';
 
 export const queryKeys = {
   persesConfig: ['perses', 'config'] as const,

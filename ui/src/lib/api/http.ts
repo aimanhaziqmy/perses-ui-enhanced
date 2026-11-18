@@ -1,7 +1,7 @@
 import type { GlobalVariableResource } from '@perses-dev/client';
 import { buildProxyUrl } from '@perses-dev/client';
 
-import { rewriteProxyRequestForNamespaces } from '@/api/workspace';
+import { rewriteProxyRequestForNamespaces } from '@/lib/api/workspace';
 
 export class UnauthorizedError extends Error {
   readonly status = 401;
