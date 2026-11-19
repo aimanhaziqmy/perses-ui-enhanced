@@ -1,18 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildLogsQLLevelFilter, classifyLogLevel } from '../logs';
 
-describe('logs level classification & histogram parity', () => {
+describe('logs structured-field level classification & histogram parity', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
   });
 
-  it('classifies OOMKilled / error message logs as error', () => {
-    expect(classifyLogLevel({ _time: '2026-11-18T17:01:41Z', _stream: '{}', _msg: 'Pod terminated due to OOMKilled' })).toBe('error');
-    expect(classifyLogLevel({ _time: '2026-11-18T17:01:41Z', _stream: '{}', _msg: 'Normal request 200 OK' })).toBe('other');
+  it('classifies logs strictly from structured level fields and routes unstructured logs to other', () => {
+    expect(classifyLogLevel({ _time: '2026-11-18T17:01:41Z', _stream: '{}', level: 'error', _msg: 'boom' })).toBe('error');
+    expect(classifyLogLevel({ _time: '2026-11-18T17:01:41Z', _stream: '{}', severity: 'WARN', _msg: 'careful' })).toBe('warning');
+    expect(classifyLogLevel({ _time: '2026-11-18T17:01:41Z', _stream: '{}', _msg: 'Pod terminated due to OOMKilled' })).toBe('other');
   });
 
-  it('uses the same _msg + structured predicates in level histogram as buildLogsQLLevelFilter', async () => {
+  it('uses identical structured-field predicates in histogram and level filter without full-text _msg scans', async () => {
     const capturedUrls: string[] = [];
     vi.stubGlobal(
       'fetch',
@@ -25,7 +26,7 @@ describe('logs level classification & histogram parity', () => {
 
     const { queryVictoriaLogsLevelHistogram } = await import('../logs');
     await queryVictoriaLogsLevelHistogram(
-      'CrashLoopBackOff OR OOMKilled',
+      '*',
       '2026-11-18T17:01:41.000Z',
       '2026-11-18T17:01:42.000Z',
       1,
@@ -35,13 +36,12 @@ describe('logs level classification & histogram parity', () => {
     expect(capturedUrls.length).toBe(1);
     const parsedUrl = new URL(capturedUrls[0], 'http://localhost');
     const histQuery = parsedUrl.searchParams.get('query') ?? '';
-    expect(histQuery).toContain('_msg:i(oomkilled)');
-    expect(histQuery).toContain('_msg:i(warning)');
-    expect(histQuery).toContain('_msg:i(debug)');
-    expect(histQuery).toContain('_msg:i(info)');
+    expect(histQuery).toContain('level:~"(?i)(err|fatal|crit|panic)"');
+    expect(histQuery).not.toContain('_msg:i(');
 
     const otherFilter = buildLogsQLLevelFilter(['other']);
-    expect(otherFilter).toContain('_msg:i(oomkilled)');
+    expect(otherFilter).toContain('level:~"(?i)(err|fatal|crit|panic)"');
+    expect(otherFilter).not.toContain('_msg:i(');
     expect(otherFilter?.startsWith('NOT ')).toBe(true);
   });
 });
