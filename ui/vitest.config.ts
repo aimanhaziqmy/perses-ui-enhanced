@@ -10,5 +10,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'deploy/nginx/njs/**/*.test.ts'],
+    server: {
+      deps: {
+        inline: [/@perses-dev/, /mdi-material-ui/],
+      },
+    },
   },
 });

@@ -5,8 +5,9 @@ import type {
   PersesFrontendConfig,
   PersesHealthResponse,
   PersesPluginModuleResource,
-} from '@/api/persesClient';
-import { fetchPersesPlugins, queryKeys } from '@/api/persesClient';
+} from '@/lib/api/auth';
+import { fetchPersesPlugins } from '@/lib/api/auth';
+import { queryKeys } from '@/lib/api/queryKeys';
 
 export function SystemAboutView({
   health,

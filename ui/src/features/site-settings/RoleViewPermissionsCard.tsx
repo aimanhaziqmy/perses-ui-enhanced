@@ -24,15 +24,15 @@ import LockOutline from 'mdi-material-ui/LockOutline';
 import Plus from 'mdi-material-ui/Plus';
 import React, { useEffect, useMemo, useState } from 'react';
 
+import { queryKeys } from '@/lib/api/queryKeys';
+import { fetchPersesGlobalRoles } from '@/lib/api/rbac';
 import {
   APP_VIEWS,
   type AppViewKey,
   DEFAULT_ROLE_VIEW_PERMISSIONS,
   type RoleViewPermissionsConfig,
-  fetchPersesGlobalRoles,
   normalizeRoleViewPermissions,
-  queryKeys,
-} from '@/api/persesClient';
+} from '@/lib/api/viewPermissions';
 
 export interface RoleViewPermissionsCardProps {
   rolePermissions: RoleViewPermissionsConfig;

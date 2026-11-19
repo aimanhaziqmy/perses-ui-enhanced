@@ -15,8 +15,10 @@ import {
 import { useTheme } from '@mui/material/styles';
 import React, { useEffect, useState } from 'react';
 
-import type { RoleViewPermissionsConfig, SiteBrandingConfig } from '@/api/persesClient';
-import { DEFAULT_ROLE_VIEW_PERMISSIONS, DEFAULT_SITE_BRANDING } from '@/api/persesClient';
+import type { SiteBrandingConfig } from '@/lib/api/branding';
+import { DEFAULT_SITE_BRANDING } from '@/lib/api/branding';
+import type { RoleViewPermissionsConfig } from '@/lib/api/viewPermissions';
+import { DEFAULT_ROLE_VIEW_PERMISSIONS } from '@/lib/api/viewPermissions';
 import { PersesLogoMark } from '@/components/ui/BrandIcons';
 import { RoleViewPermissionsCard } from './RoleViewPermissionsCard';
 import { SsoSettingsCard } from './SsoSettingsCard';

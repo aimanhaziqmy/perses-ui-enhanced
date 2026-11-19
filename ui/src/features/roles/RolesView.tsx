@@ -45,19 +45,19 @@ import Plus from 'mdi-material-ui/Plus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
 
+import { ForbiddenError } from '@/lib/api/http';
+import { fetchProjects } from '@/lib/api/projects';
+import { queryKeys } from '@/lib/api/queryKeys';
 import {
-  ForbiddenError,
   createPersesGlobalRole,
   createProjectRole,
   deletePersesGlobalRole,
   deleteProjectRole,
   fetchPersesGlobalRoles,
   fetchProjectRoles,
-  fetchProjects,
-  queryKeys,
   updatePersesGlobalRole,
   updateProjectRole,
-} from '@/api/persesClient';
+} from '@/lib/api/rbac';
 import { ViewLoadingState } from '@/components/ui/ViewStates';
 
 const AVAILABLE_ACTIONS = Array.from(new Set(['*', ...ACTIONS])) as Action[];

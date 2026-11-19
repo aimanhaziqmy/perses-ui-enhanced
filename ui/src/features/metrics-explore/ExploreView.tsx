@@ -6,7 +6,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { fetchProjects, queryKeys, useDatasourceTargets, usePersesDatasourceApi } from '@/api/persesClient';
+import { useDatasourceTargets, usePersesDatasourceApi } from '@/lib/api/datasources';
+import { fetchProjects } from '@/lib/api/projects';
+import { queryKeys } from '@/lib/api/queryKeys';
 
 export function ExploreView({ defaultProject = '' }: { defaultProject?: string }) {
   const navigate = useNavigate();

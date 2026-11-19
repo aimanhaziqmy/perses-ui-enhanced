@@ -32,6 +32,7 @@ export const queryKeys = {
   logPresetsConfig: ['perses', 'log-presets-config'] as const,
   workspaceMap: ['perses', 'workspace-map'] as const,
   roleViewPermissions: ['perses', 'role-view-permissions'] as const,
+  publicShares: ['perses', 'public-shares'] as const,
 
   // Proxy-backed queries: prefixed with 'proxy' and scoped by active namespace(s)
   proxyPrefix: ['proxy'] as const,

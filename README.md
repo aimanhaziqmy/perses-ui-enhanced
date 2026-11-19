@@ -31,10 +31,13 @@ flowchart LR
 ```
 
 - **Untouched Upstream Perses Backend**: Uses official `persesdev/perses` (`v0.55.1+`) for authentication, RBAC, dashboards, projects, datasources, proxy routing, and remote plugin serving.
-- **Forward-Compatible UI Design**:
-  - Custom views (`Logs`, `Hosts`, `Alert rules`, `Events`, `Data sources`, `Users`, `Roles`, `Site settings`) use stable `/api/v1/*` and `/proxy/*` HTTP contracts and work across future Perses versions without rebuilding the UI.
+- **Forward-Compatible Perses SDK Architecture**:
+  - Custom views (`Logs`, `Hosts`, `Alert rules`, `Events`, `Data sources`, `Users`, `Roles`, `Site settings`) use stable `/api/v1/*` and `/proxy/*` HTTP contracts via `@perses-dev/client` (`buildProxyUrl`, `UserFriendlyError`, `FetchError`) and `@perses-dev/components` (`formatValue`).
   - `/plugins/*` is proxied directly from the running Perses server so panel and datasource plugins stay dynamic.
-  - Embedded `<ViewDashboard>` and `<ViewExplore>` use `@perses-dev/*` Module Federation singletons with an ESM/`__esModule` interop bridge; only major/minor plugin-system API changes require bumping `@perses-dev/*` in `ui/package.json`.
+  - Embedded `<ViewDashboard>` and `<ViewExplore>` use `@perses-dev/*` Module Federation singletons with a tested ESM/`__esModule` interop contract (`ui/src/app/perses/federation-chunk.ts`); only major/minor plugin-system API changes require bumping `@perses-dev/*` in `ui/package.json`.
+- **Hardened Nginx + `njs` Gateway (`ui/deploy/nginx/`)**:
+  - Enforces server-side authentication, trusted-proxy header stripping (`$trusted_proxy` CIDR allowlist), structured JSON audit logging, and server-side tenant namespace scoping on `/proxy/*` (PromQL, LogsQL, Jaeger/Tempo) via `njs/audit.js`.
+  - Enforces admin-managed **Guest Role** + opaque `?share=<token>` public dashboard/panel embeds scoped to the published tenant namespace(s).
 
 ---
 
@@ -63,9 +66,18 @@ flowchart LR
 
 ```
 .
+├── .github/workflows/ci.yml    # Automated Vitest, ESLint, TypeScript & Vite build CI
 ├── helm/
 │   └── perses-observability/   # Turnkey umbrella Helm chart (VictoriaLogs + VictoriaMetrics + Perses + UI)
-├── ui/                         # perses-ui-enhanced React + TypeScript + Vite source & Dockerfile
+├── ui/
+│   ├── deploy/nginx/           # Hardened Nginx config & njs gateway (audit.js + Vitest tests)
+│   ├── src/
+│   │   ├── app/                # App shell, layout, router, providers, Perses SDK federation interop
+│   │   ├── components/ui/      # Shared UI primitives (ViewStates, JsonViewer)
+│   │   ├── features/           # Isolated feature modules (auth, dashboards, logs, metrics, traces, alerts, hosts, datasources, users, roles, site-settings, workspace)
+│   │   ├── lib/                # API clients, queryKeys, RBAC, workspace isolation, unit formatting, CSV/JSON export
+│   │   └── theme/              # Light/Dark MUI & ECharts theme
+│   └── Dockerfile              # Multi-stage Node 24 -> unprivileged Nginx 1.27 + njs image
 └── README.md
 ```
 
@@ -155,25 +167,34 @@ To grant OIDC users Viewer access automatically on first login, either:
 - **Option A (Per-workspace isolation)**: Assign the user a Perses Project `RoleBinding` (e.g. `viewer` role with `read` on `Dashboard`, `Datasource`, `Variable`) on their specific Project under **Organization → Users** (or via Perses API `/api/v1/projects/{project}/rolebindings`).
 - **Option B (Viewer-by-default for all OIDC users)**: Uncomment the `guest_permissions` block in `helm/perses-observability/values.yaml` (`actions: ["read"]`, `scopes: ["Project", "Dashboard", "Datasource", "GlobalDatasource", "Variable"]`).
 
-### 2. Workspace & Namespace URL Scoping (Standalone Docker & Kubernetes)
+### 2. Server-Side Tenant Isolation & Workspace Scoping
 - **Standalone Docker / non-Kubernetes**: Works with zero namespace assumptions. Perses **Projects** are the native isolation boundary.
-- **Kubernetes / Portal Integration**: Launching the UI with `?project=<workspace>&namespace=<ns>` (e.g. `/dashboards?project=team-a&namespace=team-a-ns`) pre-selects that Project in **Dashboards** and **Metrics Explorer** and scopes **Logs Explorer** queries with `kubernetes.namespace_name:="<ns>"` for the active browser session.
-- **Hard Data-Plane Tenant Isolation**: URL scoping is a UX filter; for strict multi-tenant metric/log isolation at the data layer, create **Project-scoped Datasources** pointing to tenant-filtered `vmauth` / VictoriaMetrics / VictoriaLogs endpoints rather than sharing a cluster-wide `GlobalDatasource`.
+- **Kubernetes / OtterScale Workspace Isolation**: When `/tmp/workspace-map.json` is mounted (supporting both `WorkspaceList` and `NamespaceList` formats, as well as OIDC subject UUID matching), **both** the React UI and the Nginx `njs` gateway (`ui/deploy/nginx/njs/audit.js`) verify the caller's Perses permissions and automatically inject tenant namespace filters into every `/proxy/*` PromQL, LogsQL, and Jaeger/Tempo query. Admin users remain unscoped.
+- **Admin-Managed Guest Role & Scoped Public Embeds**:
+  - In **System → Site settings → Role View Permissions**, enable **Dashboards (Overview)** for the `guest` role (disabled by default).
+  - In any dashboard's **Share & Embed** modal, site admins can select **Public (Guest Role + Token)**, pick a **Tenant Namespace Scope** (`*` or a specific namespace), and publish or revoke an opaque `?share=<token>` link (stored in Perses `GlobalVariable` `perses_ui_public_shares`).
+  - Nginx `njs` validates `X-Perses-Share-Token` against `role_view_permissions_config` and `perses_ui_public_shares`, permits read-only `/api/v1/` access strictly for that shared dashboard and its datasources/variables, and enforces the token's `allowedNamespaces` on every `/proxy/` query.
 
 ---
 
-## Building the Custom UI Container
+## Building & Testing the Custom UI Container
 
 ```bash
-docker build -t ghcr.io/aimanhaziqmy/perses-ui-enhanced:v1.0.0 ./ui
+docker build -t ghcr.io/aimanhaziqmy/perses-ui-enhanced:v1.1.48 ./ui
 ```
 
-### Local UI Development
+### Local UI Development & Quality Checks
 Run a Perses backend locally (default `http://localhost:8080`) or update the proxy target in `ui/vite.config.ts`, then:
 
 ```bash
 cd ui
-npm install
+npm ci
 npm run dev
+
+# Verification suite
+npm test          # Vitest unit tests (workspace isolation, njs gateway, logs, units, public shares, SDK interop)
+npm run lint      # ESLint + feature-boundary enforcement
+npm run typecheck # TypeScript --noEmit
+npm run build     # Production Vite bundle
 ```
 

@@ -51,11 +51,6 @@ const DEBUG_FIELDS_LOGSQL =
 const INFO_FIELDS_LOGSQL =
   '(level:~"(?i)(info|information|notice|normal)" OR severity:~"(?i)(info|information|notice|normal)" OR lvl:~"(?i)(info|information|notice|normal)" OR log.level:~"(?i)(info|information|notice|normal)" OR type:~"(?i)(info|normal)")';
 
-const ERR_LOGSQL = `(${ERR_FIELDS_LOGSQL.slice(1, -1)} OR _msg:i(error) OR _msg:i(err) OR _msg:i(fatal) OR _msg:i(critical) OR _msg:i(panic) OR _msg:i(oomkilled) OR _msg:i(exception))`;
-const WARN_LOGSQL = `(${WARN_FIELDS_LOGSQL.slice(1, -1)} OR _msg:i(warn) OR _msg:i(warning))`;
-const DEBUG_LOGSQL = `(${DEBUG_FIELDS_LOGSQL.slice(1, -1)} OR _msg:i(debug) OR _msg:i(trace))`;
-const INFO_LOGSQL = `(${INFO_FIELDS_LOGSQL.slice(1, -1)} OR _msg:i(info) OR _msg:i(information))`;
-
 export function classifyLogLevel(entry: VictoriaLogEntry): LogLevel {
   const structured = [entry.level, entry.severity, entry.lvl, entry['log.level'], entry.type]
     .filter((v) => typeof v === 'string' && v.trim().length > 0)
@@ -69,12 +64,6 @@ export function classifyLogLevel(entry: VictoriaLogEntry): LogLevel {
     if (/(info|notice|normal)/.test(structured)) return 'info';
   }
 
-  const msg = String(entry._msg ?? '');
-  if (/\b(error|err|fatal|critical|panic|oomkilled|exception)\b/i.test(msg)) return 'error';
-  if (/\b(warn|warning)\b/i.test(msg)) return 'warning';
-  if (/\b(debug|trace)\b/i.test(msg)) return 'debug';
-  if (/\b(info|information)\b/i.test(msg)) return 'info';
-
   return 'other';
 }
 
@@ -86,10 +75,10 @@ export function buildLogsQLLevelFilter(selectedLevels: LogLevel[]): string | nul
 
   const selected = new Set(unique);
   const priorityOrder: Array<{ level: Exclude<LogLevel, 'other'>; expr: string }> = [
-    { level: 'error', expr: ERR_LOGSQL },
-    { level: 'warning', expr: WARN_LOGSQL },
-    { level: 'debug', expr: DEBUG_LOGSQL },
-    { level: 'info', expr: INFO_LOGSQL },
+    { level: 'error', expr: ERR_FIELDS_LOGSQL },
+    { level: 'warning', expr: WARN_FIELDS_LOGSQL },
+    { level: 'debug', expr: DEBUG_FIELDS_LOGSQL },
+    { level: 'info', expr: INFO_FIELDS_LOGSQL },
   ];
 
   if (selected.has('other')) {

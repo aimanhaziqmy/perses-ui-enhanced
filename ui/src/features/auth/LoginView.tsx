@@ -18,8 +18,10 @@ import KeyVariant from 'mdi-material-ui/KeyVariant';
 import ShieldCheck from 'mdi-material-ui/ShieldCheck';
 import React, { useState } from 'react';
 
-import type { PersesFrontendConfig, SiteBrandingConfig } from '@/api/persesClient';
-import { getLocalSiteBranding, loginNative } from '@/api/persesClient';
+import type { PersesFrontendConfig } from '@/lib/api/auth';
+import { loginNative } from '@/lib/api/auth';
+import type { SiteBrandingConfig } from '@/lib/api/branding';
+import { getLocalSiteBranding } from '@/lib/api/branding';
 import type { ThemeMode } from '@/theme/persesTheme';
 import { MoonIcon, PersesLogoMark, SunIcon } from '@/components/ui/BrandIcons';
 

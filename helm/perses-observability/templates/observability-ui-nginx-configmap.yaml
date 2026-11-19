@@ -101,21 +101,8 @@ data:
       }
 
       location /api/v1/ {
-        if ($is_authenticated = "0") {
-          return 401;
-        }
         access_log /dev/stdout perses_audit if=$is_perses_audit;
-        proxy_pass http://{{ $persesSvc }};
-        proxy_http_version 1.1;
-        proxy_set_header Host $http_host;
-        proxy_set_header X-Forwarded-Host $http_host;
-        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-User $clean_forwarded_user;
-        proxy_set_header X-Auth-Request-User $clean_auth_request_user;
-        proxy_set_header X-Auth-Request-Preferred-Username $clean_auth_request_preferred_username;
-        proxy_read_timeout 120s;
+        js_content audit.apiV1WithGuestShare;
       }
 
       location /api/ {
@@ -134,9 +121,6 @@ data:
       }
 
       location /proxy/ {
-        if ($is_authenticated = "0") {
-          return 401;
-        }
         access_log /dev/stdout perses_audit if=$is_perses_audit;
         js_content audit.proxyWithTenantScope;
       }

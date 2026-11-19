@@ -1,35 +1,42 @@
 import type { GlobalVariableResource } from '@perses-dev/client';
-import { buildProxyUrl } from '@perses-dev/client';
+import { FetchError, UserFriendlyError, buildProxyUrl } from '@perses-dev/client';
 
 import { rewriteProxyRequestForNamespaces } from '@/lib/api/workspace';
 
-export class UnauthorizedError extends Error {
-  readonly status = 401;
+export class UnauthorizedError extends UserFriendlyError {
   constructor(message = 'Authentication required') {
-    super(message);
+    super(message, 401);
     this.name = 'UnauthorizedError';
+    Object.setPrototypeOf(this, UnauthorizedError.prototype);
   }
 }
 
-export class ForbiddenError extends Error {
-  readonly status = 403;
+export class ForbiddenError extends UserFriendlyError {
   constructor(message = 'Permission denied (403 Forbidden)') {
-    super(message);
+    super(message, 403);
     this.name = 'ForbiddenError';
+    Object.setPrototypeOf(this, ForbiddenError.prototype);
   }
 }
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 let refreshInFlight: Promise<boolean> | null = null;
 let proxyInterceptorInstalled = false;
+let activePublicShareToken: string | null = null;
+
+export function setActivePublicShareToken(token: string | null): void {
+  const trimmed = token?.trim() ?? '';
+  activePublicShareToken = trimmed || null;
+}
+
+export function getActivePublicShareToken(): string | null {
+  return activePublicShareToken;
+}
 
 export function installGlobalProxyFetchInterceptor(): void {
   if (proxyInterceptorInstalled || typeof globalThis.fetch !== 'function') return;
   proxyInterceptorInstalled = true;
-  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    const { input: scopedInput, init: scopedInit } = rewriteProxyRequestForNamespaces(input, init);
-    return nativeFetch(scopedInput, scopedInit);
-  };
+  globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => persesFetchFn(input, init);
 }
 
 export async function refreshAuthSession(): Promise<boolean> {
@@ -56,12 +63,35 @@ export async function persesFetchFn(input: RequestInfo | URL, init?: RequestInit
       : scopedInput instanceof URL
         ? scopedInput.toString()
         : scopedInput.url;
-  const retryRequest = scopedInput instanceof Request ? scopedInput.clone() : null;
-  const res = await nativeFetch(scopedInput, scopedInit);
-  if (res.status === 401 && !urlStr.includes('/api/auth/')) {
+
+  let finalInput = scopedInput;
+  let finalInit = scopedInit;
+  if (
+    activePublicShareToken &&
+    (urlStr.startsWith('/api/v1/') ||
+      urlStr.startsWith('/proxy/') ||
+      urlStr.includes('/api/v1/') ||
+      urlStr.includes('/proxy/'))
+  ) {
+    const mergedHeaders = new Headers(
+      finalInit?.headers ?? (finalInput instanceof Request ? finalInput.headers : undefined),
+    );
+    if (!mergedHeaders.has('X-Perses-Share-Token')) {
+      mergedHeaders.set('X-Perses-Share-Token', activePublicShareToken);
+    }
+    if (finalInput instanceof Request) {
+      finalInput = new Request(finalInput, { headers: mergedHeaders });
+    } else {
+      finalInit = { ...finalInit, headers: mergedHeaders };
+    }
+  }
+
+  const retryRequest = finalInput instanceof Request ? finalInput.clone() : null;
+  const res = await nativeFetch(finalInput, finalInit);
+  if (res.status === 401 && !activePublicShareToken && !urlStr.includes('/api/auth/')) {
     const refreshed = await refreshAuthSession();
     if (refreshed) {
-      return nativeFetch(retryRequest ?? scopedInput, scopedInit);
+      return nativeFetch(retryRequest ?? finalInput, finalInit);
     }
   }
   return res;
@@ -75,7 +105,10 @@ export async function throwForBadResponse(res: Response, url: string): Promise<n
   if (res.status === 403) {
     throw new ForbiddenError(`Permission denied (403): ${body || 'Your role lacks permission for this action.'}`);
   }
-  throw new Error(`HTTP ${res.status} from ${url}: ${body || res.statusText}`);
+  if (body) {
+    throw new UserFriendlyError(`HTTP ${res.status} from ${url}: ${body}`, res.status);
+  }
+  throw new FetchError(res);
 }
 
 export async function apiGetJson<T>(url: string, options?: { signal?: AbortSignal }): Promise<T> {

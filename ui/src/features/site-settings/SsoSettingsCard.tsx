@@ -19,7 +19,8 @@ import ContentCopy from 'mdi-material-ui/ContentCopy';
 import KeyVariant from 'mdi-material-ui/KeyVariant';
 import ShieldAccount from 'mdi-material-ui/ShieldAccount';
 
-import { fetchPersesConfig, queryKeys } from '@/api/persesClient';
+import { fetchPersesConfig } from '@/lib/api/auth';
+import { queryKeys } from '@/lib/api/queryKeys';
 
 type SsoPresetKey = 'keycloak' | 'oidc' | 'google' | 'github';
 

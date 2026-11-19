@@ -51,6 +51,7 @@ export const DEFAULT_ROLE_VIEW_PERMISSIONS: RoleViewPermissionsConfig = {
     editor: ['dashboards', 'metrics', 'logs', 'traces', 'alerts', 'events', 'hosts', 'datasources', 'about'],
     operator: ['dashboards', 'metrics', 'logs', 'traces', 'alerts', 'events', 'hosts', 'datasources', 'about'],
     viewer: ['dashboards', 'metrics', 'logs', 'traces', 'alerts', 'events', 'about'],
+    guest: [],
   },
 };
 

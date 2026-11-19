@@ -184,13 +184,27 @@ function resolveAllowedNamespaces(workspaceMap, username, subjectOrList) {
     var item = items[i] || {};
     var meta = item.metadata || {};
     var spec = item.spec || {};
-    var ns = String(spec.namespace || '').trim();
+    var status = item.status || {};
+    var labels = meta.labels || {};
+    var labelKeys = Object.keys(labels);
+    var nsLabel = '';
+    for (var nlIdx = 0; nlIdx < labelKeys.length; nlIdx++) {
+      if (labelKeys[nlIdx].endsWith('/namespace')) {
+        nsLabel = String(labels[labelKeys[nlIdx]] || '').trim();
+        break;
+      }
+    }
+    var ns = String(
+      spec.namespace ||
+        (status.namespaceRef && status.namespaceRef.name) ||
+        nsLabel ||
+        meta.name ||
+        '',
+    ).trim();
     if (!ns) {
       continue;
     }
-    var labels = meta.labels || {};
     var hasLabelMatch = false;
-    var labelKeys = Object.keys(labels);
     for (var j = 0; j < labelKeys.length; j++) {
       var lk = labelKeys[j];
       if (labels[lk] !== 'true') {
@@ -687,7 +701,204 @@ function readWorkspaceMapSafe() {
   return null;
 }
 
+function extractShareToken(r) {
+  if (!r || !r.headersIn) {
+    return '';
+  }
+  var token = r.headersIn['X-Perses-Share-Token'] || r.headersIn['x-perses-share-token'] || '';
+  return String(token).trim();
+}
+
+function parseGlobalVariableJson(responseText) {
+  if (!responseText) {
+    return null;
+  }
+  try {
+    var res = JSON.parse(responseText);
+    var rawVal = '';
+    if (res && res.spec && res.spec.kind === 'TextVariable' && res.spec.spec && typeof res.spec.spec.value === 'string') {
+      rawVal = res.spec.spec.value;
+    } else if (res && res.spec && res.spec.spec && typeof res.spec.spec.value === 'string') {
+      rawVal = res.spec.spec.value;
+    } else if (res && res.spec && res.spec.plugin && res.spec.plugin.spec && typeof res.spec.plugin.spec.value === 'string') {
+      rawVal = res.spec.plugin.spec.value;
+    }
+    if (!rawVal) {
+      return null;
+    }
+    return JSON.parse(rawVal);
+  } catch (_e) {
+    return null;
+  }
+}
+
+function isGuestDashboardsAllowed(roleConfig) {
+  if (!roleConfig || !roleConfig.roles || !Array.isArray(roleConfig.roles.guest)) {
+    return false;
+  }
+  return roleConfig.roles.guest.indexOf('dashboards') !== -1;
+}
+
+function findMatchingPublicShare(sharesConfig, token) {
+  if (!token || !sharesConfig || !Array.isArray(sharesConfig.shares)) {
+    return null;
+  }
+  for (var i = 0; i < sharesConfig.shares.length; i++) {
+    var item = sharesConfig.shares[i];
+    if (
+      item &&
+      item.enabled !== false &&
+      item.token === token &&
+      typeof item.project === 'string' &&
+      item.project.length > 0 &&
+      typeof item.dashboard === 'string' &&
+      item.dashboard.length > 0
+    ) {
+      return item;
+    }
+  }
+  return null;
+}
+
+function isAllowedGuestApiPath(uri, method, share) {
+  if (method !== 'GET' || !share) {
+    return false;
+  }
+  var qIdx = uri.indexOf('?');
+  var path = qIdx === -1 ? uri : uri.slice(0, qIdx);
+  var encProj = encodeURIComponent(share.project);
+  var encDash = encodeURIComponent(share.dashboard);
+
+  // Never expose the share token registry itself to anonymous callers
+  if (path === '/api/v1/globalvariables/perses_ui_public_shares') {
+    return false;
+  }
+
+  if (
+    path === '/api/v1/projects/' + encProj + '/dashboards/' + encDash ||
+    path === '/api/v1/projects/' + share.project + '/dashboards/' + share.dashboard
+  ) {
+    return true;
+  }
+
+  if (
+    path === '/api/v1/projects/' + encProj ||
+    path === '/api/v1/projects/' + share.project ||
+    path === '/api/v1/plugins' ||
+    path === '/api/v1/globaldatasources' ||
+    path.indexOf('/api/v1/globaldatasources/') === 0 ||
+    path === '/api/v1/globalvariables' ||
+    path.indexOf('/api/v1/globalvariables/') === 0 ||
+    path === '/api/v1/projects/' + encProj + '/datasources' ||
+    path.indexOf('/api/v1/projects/' + encProj + '/datasources/') === 0 ||
+    path === '/api/v1/projects/' + share.project + '/datasources' ||
+    path.indexOf('/api/v1/projects/' + share.project + '/datasources/') === 0 ||
+    path === '/api/v1/projects/' + encProj + '/variables' ||
+    path.indexOf('/api/v1/projects/' + encProj + '/variables/') === 0 ||
+    path === '/api/v1/projects/' + share.project + '/variables' ||
+    path.indexOf('/api/v1/projects/' + share.project + '/variables/') === 0
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+async function resolvePublicShare(r, shareToken) {
+  if (!shareToken) {
+    return null;
+  }
+  var roleRes = await r.subrequest('/_perses_internal/api/v1/globalvariables/role_view_permissions_config', {
+    method: 'GET',
+  });
+  if (roleRes.status < 200 || roleRes.status >= 300) {
+    return null;
+  }
+  var roleConfig = parseGlobalVariableJson(roleRes.responseText || '');
+  if (!isGuestDashboardsAllowed(roleConfig)) {
+    return null;
+  }
+
+  var sharesRes = await r.subrequest('/_perses_internal/api/v1/globalvariables/perses_ui_public_shares', {
+    method: 'GET',
+  });
+  if (sharesRes.status < 200 || sharesRes.status >= 300) {
+    return null;
+  }
+  var sharesConfig = parseGlobalVariableJson(sharesRes.responseText || '');
+  return findMatchingPublicShare(sharesConfig, shareToken);
+}
+
+async function apiV1WithGuestShare(r) {
+  if (isAuthenticated(r) === '1') {
+    r.internalRedirect('/_perses_upstream' + r.variables.request_uri);
+    return;
+  }
+
+  var shareToken = extractShareToken(r);
+  if (!shareToken) {
+    r.return(401, 'Unauthorized');
+    return;
+  }
+
+  var share = await resolvePublicShare(r, shareToken);
+  if (!share || !isAllowedGuestApiPath(r.variables.request_uri, r.method, share)) {
+    r.return(403, 'Forbidden');
+    return;
+  }
+
+  r.internalRedirect('/_perses_upstream' + r.variables.request_uri);
+}
+
+async function forwardWithNamespaces(r, allowedNamespaces) {
+  var rewritten = rewriteProxyTarget(
+    r.variables.request_uri,
+    r.method,
+    r.requestText || '',
+    allowedNamespaces,
+  );
+
+  if (!rewritten.bodyModified) {
+    r.internalRedirect('/_perses_upstream' + rewritten.uri);
+    return;
+  }
+
+  var upstreamRes = await r.subrequest('/_perses_upstream' + rewritten.uri, {
+    method: r.method,
+    body: rewritten.body,
+  });
+  var contentType = upstreamRes.headersOut['Content-Type'];
+  if (contentType) {
+    r.headersOut['Content-Type'] = contentType;
+  }
+  r.return(upstreamRes.status, upstreamRes.responseBuffer);
+}
+
 async function proxyWithTenantScope(r) {
+  if (isAuthenticated(r) !== '1') {
+    var shareToken = extractShareToken(r);
+    if (!shareToken) {
+      r.return(401, 'Unauthorized');
+      return;
+    }
+    if (r.method !== 'GET' && r.method !== 'POST') {
+      r.return(403, 'Forbidden');
+      return;
+    }
+    var share = await resolvePublicShare(r, shareToken);
+    if (!share) {
+      r.return(403, 'Forbidden');
+      return;
+    }
+    var shareNs = Array.isArray(share.allowedNamespaces) ? share.allowedNamespaces : [];
+    if (shareNs.indexOf('*') !== -1) {
+      r.internalRedirect('/_perses_upstream' + r.variables.request_uri);
+      return;
+    }
+    await forwardWithNamespaces(r, shareNs);
+    return;
+  }
+
   var workspaceMap = readWorkspaceMapSafe();
   if (!workspaceMap) {
     r.internalRedirect('/_perses_upstream' + r.variables.request_uri);
@@ -751,35 +962,18 @@ async function proxyWithTenantScope(r) {
   }
 
   var allowedNamespaces = resolveAllowedNamespaces(workspaceMap, actor, subjects);
-
-  var rewritten = rewriteProxyTarget(
-    r.variables.request_uri,
-    r.method,
-    r.requestText || '',
-    allowedNamespaces,
-  );
-
-  if (!rewritten.bodyModified) {
-    r.internalRedirect('/_perses_upstream' + rewritten.uri);
-    return;
-  }
-
-  var upstreamRes = await r.subrequest('/_perses_upstream' + rewritten.uri, {
-    method: r.method,
-    body: rewritten.body,
-  });
-  var contentType = upstreamRes.headersOut['Content-Type'];
-  if (contentType) {
-    r.headersOut['Content-Type'] = contentType;
-  }
-  r.return(upstreamRes.status, upstreamRes.responseBuffer);
+  await forwardWithNamespaces(r, allowedNamespaces);
 }
 
 export default {
   extractActor,
   isAuthenticated,
+  apiV1WithGuestShare,
   proxyWithTenantScope,
   isAdminPermissions,
   resolveAllowedNamespaces,
   rewriteProxyTarget,
+  isGuestDashboardsAllowed,
+  isAllowedGuestApiPath,
+  findMatchingPublicShare,
 };

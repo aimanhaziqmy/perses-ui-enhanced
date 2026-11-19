@@ -11,7 +11,7 @@ Turnkey Kubernetes Helm chart bundling the complete **Perses + VictoriaMetrics +
 | **Kubernetes Event Exporter** | `ghcr.io/resmoio/kubernetes-event-exporter` | Streams Kubernetes cluster lifecycle events into VictoriaLogs |
 | **VictoriaMetrics Single** | `victoria-metrics-single` (`0.51.0`) | Time-series metrics DB & PromQL scraper (`node-exporter`, `kube-state-metrics`, `dcgm-exporter`, `cAdvisor`) |
 | **Perses Backend** | `perses` (`0.24.0`, app `v0.55.1`) | Untouched upstream Go backend with auth, RBAC, dashboards & plugin serving |
-| **Enhanced UI Shell** | `perses-ui-enhanced` | Custom React UI reverse-proxying `/api`, `/proxy`, and `/plugins` to Perses |
+| **Enhanced UI Shell** | `perses-ui-enhanced` | Custom React UI + hardened Nginx `njs` gateway (`audit.js`) enforcing auth, tenant namespace scoping, and guest share tokens |
 | **Optional `vmauth` & `oauth2-proxy`** | Disabled by default | Multi-tenant LogQL proxy & OIDC reverse-proxy gate |
 
 ---
@@ -74,4 +74,12 @@ helm upgrade --install observability . \
 | `observabilityUi.enabled` | `true` | Deploy `perses-ui-enhanced` frontend container |
 | `observabilityUi.image.repository` | `ghcr.io/aimanhaziqmy/perses-ui-enhanced` | Custom UI container image repository |
 | `observabilityUi.httpRoute.enabled` | `false` | Create Gateway API `HTTPRoute` for the UI |
-a
+
+---
+
+## Public Embeds & Guest Role Notes
+
+To enable admin-managed public dashboard/panel embeds (`?share=<token>`):
+1. Ensure Perses `perses.config.security.authorization.provider.native.guest_permissions` grants `read` on `GlobalVariable`, `Project`, `Dashboard`, `Datasource`, `GlobalDatasource`, and `Variable`.
+2. In the UI under **System → Site settings → Role View Permissions**, enable **Dashboards (Overview)** for the `guest` role (disabled by default).
+3. In a dashboard's **Share & Embed** modal, select **Public (Guest Role + Token)**, pick the tenant namespace scope (`*` or a specific namespace), and click **Publish Public Link**.

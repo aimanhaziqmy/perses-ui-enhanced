@@ -6,10 +6,6 @@ import {
   CardContent,
   Chip,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   FormControl,
   FormControlLabel,
   IconButton,
@@ -35,12 +31,10 @@ import {
   Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import ArrowDown from 'mdi-material-ui/ArrowDown';
 import ArrowLeft from 'mdi-material-ui/ArrowLeft';
 import ArrowRight from 'mdi-material-ui/ArrowRight';
 import Close from 'mdi-material-ui/Close';
-import DeleteOutline from 'mdi-material-ui/DeleteOutline';
 import DeleteSweep from 'mdi-material-ui/DeleteSweep';
 import Download from 'mdi-material-ui/Download';
 import PencilOutline from 'mdi-material-ui/PencilOutline';
@@ -49,148 +43,52 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { datasourceTargetKey, useDatasourceTargets } from '@/lib/api/datasources';
+import { ForbiddenError } from '@/lib/api/http';
 import type {
   HistogramGroupBy,
-  LogDatasourceAdapter,
   LogLevel,
   LogPresetItem,
-  LogQueryResult,
-  NormalizedLogEntry,
   VictoriaLogGroupHitBucket,
   VictoriaLogHitBucket,
-} from '@/api/persesClient';
+} from '@/lib/api/logs';
 import {
   ALL_LOG_LEVELS,
   DEFAULT_LOG_PRESETS,
-  ForbiddenError,
   buildLogsQLLevelFilter,
-  createLogDatasourceAdapter,
-  datasourceTargetKey,
   fetchLogPresetsConfig,
   fetchVictoriaLogsChunked,
   hasCustomLimitOrTransformPipe,
   injectLogsQLFilter,
-  queryKeys,
   queryVictoriaLogsFieldHistogram,
   queryVictoriaLogsLevelHistogram,
   saveLogPresetsConfig,
   setLocalLogPresets,
-  toFlatLogRecord,
-  useDatasourceTargets,
-} from '@/api/persesClient';
+} from '@/lib/api/logs';
+import { queryKeys } from '@/lib/api/queryKeys';
+import type {
+  LogDatasourceAdapter,
+  LogQueryResult,
+  NormalizedLogEntry,
+} from './api/logDatasource';
+import { createLogDatasourceAdapter, toFlatLogRecord } from './api/logDatasource';
 import type { ExportFormat } from '@/lib/export/exportRecords';
 import { exportRawJsonlLinesToFile, exportRecordsToFile } from '@/lib/export/exportRecords';
 import { VictoriaLogsBrandIcon } from '@/components/ui/BrandIcons';
 import { LogDetailDrawer } from './LogDetailDrawer';
 import { LogsHistogramChart } from './LogsHistogramChart';
-
-interface QueryTabState {
-  id: string;
-  label: string;
-  query: string;
-  rangeMinutes: number;
-  selectedLevels: LogLevel[];
-  customStartIso?: string;
-  customEndIso?: string;
-}
-
-const TIME_RANGES = [
-  { label: 'Last 15 minutes', minutes: 15 },
-  { label: 'Last 1 hour', minutes: 60 },
-  { label: 'Last 6 hours', minutes: 360 },
-  { label: 'Last 24 hours', minutes: 1440 },
-];
-
-const LEVEL_META: Record<LogLevel, { label: string; short: string; color: string }> = {
-  error: { label: 'Error', short: 'ERR', color: '#EF4444' },
-  warning: { label: 'Warning', short: 'WARN', color: '#F59E0B' },
-  info: { label: 'Info', short: 'INFO', color: '#3B82F6' },
-  debug: { label: 'Debug', short: 'DBG', color: '#8B5CF6' },
-  other: { label: 'Other', short: 'OTHER', color: '#64748B' },
-};
-
-function formatCompactTs(ts: string): string {
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return ts;
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const min = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  const ms = String(d.getMilliseconds()).padStart(3, '0');
-  return `${mm}-${dd} ${hh}:${min}:${ss}.${ms}`;
-}
-
-function formatFullTs(date: Date): string {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  const hh = String(date.getHours()).padStart(2, '0');
-  const min = String(date.getMinutes()).padStart(2, '0');
-  const ss = String(date.getSeconds()).padStart(2, '0');
-  const ms = String(date.getMilliseconds()).padStart(3, '0');
-  return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}.${ms}`;
-}
-
-function buildFallbackBuckets(entries: NormalizedLogEntry[], startMs: number, endMs: number): VictoriaLogHitBucket[] {
-  const bucketCount = 48;
-  const span = Math.max(1000, endMs - startMs);
-  const stepMs = span / bucketCount;
-  const bucketsCounts: Array<Record<LogLevel, number>> = Array.from({ length: bucketCount }, () => ({
-    error: 0,
-    warning: 0,
-    info: 0,
-    debug: 0,
-    other: 0,
-  }));
-
-  for (const entry of entries) {
-    const t = entry.timestampMs || new Date(entry.timestamp).getTime();
-    if (!Number.isFinite(t)) continue;
-    const idx = Math.min(bucketCount - 1, Math.max(0, Math.floor((t - startMs) / stepMs)));
-    bucketsCounts[idx][entry.severity] += 1;
-  }
-
-  return bucketsCounts.map((counts, i) => {
-    const d = new Date(startMs + i * stepMs);
-    const dEnd = new Date(startMs + (i + 1) * stepMs);
-    const count = counts.error + counts.warning + counts.info + counts.debug + counts.other;
-    return {
-      timestamp: d.toISOString(),
-      endTimestamp: dEnd.toISOString(),
-      label: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
-      count,
-      counts,
-    };
-  });
-}
-
-function LevelBadge({ level }: { level: LogLevel }) {
-  const meta = LEVEL_META[level];
-  return (
-    <Box
-      component="span"
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        px: 0.75,
-        py: 0.15,
-        borderRadius: 0.75,
-        fontSize: 10.5,
-        fontWeight: 700,
-        fontFamily: 'monospace',
-        letterSpacing: '0.03em',
-        color: '#FFFFFF',
-        bgcolor: meta.color,
-        minWidth: 46,
-        lineHeight: 1.4,
-      }}
-    >
-      {meta.short}
-    </Box>
-  );
-}
+import { LogsPresetDialogs } from './components/LogsPresetDialogs';
+import { MAX_LIVE_BUFFER_LINES, useLiveTail } from './hooks/useLiveTail';
+import { useLogTabs } from './hooks/useLogTabs';
+import {
+  LEVEL_META,
+  LOG_BATCH_SIZE,
+  LevelBadge,
+  TIME_RANGES,
+  buildFallbackBuckets,
+  formatCompactTs,
+  formatFullTs,
+} from './logsExplorerHelpers';
 
 export function LogsExplorerView({
   initialQuery = '*',
@@ -222,51 +120,6 @@ export function LogsExplorerView({
     [vlTargets, selectedTargetKey],
   );
 
-  const LOGS_TABS_STORAGE_KEY = 'perses_logs_query_tabs_v1';
-
-  const [tabs, setTabs] = useState<QueryTabState[]>(() => {
-    try {
-      const raw = window.localStorage.getItem(LOGS_TABS_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { tabs?: QueryTabState[] };
-        if (Array.isArray(parsed.tabs) && parsed.tabs.length > 0) {
-          const valid = parsed.tabs.filter(
-            (t) => t && typeof t.id === 'string' && typeof t.label === 'string' && typeof t.query === 'string',
-          );
-          if (valid.length > 0) {
-            if (initialQuery && initialQuery !== '*') {
-              return [{ ...valid[0], query: initialQuery }, ...valid.slice(1)];
-            }
-            return valid;
-          }
-        }
-      }
-    } catch {
-      // Ignore malformed localStorage state and fall back to default tab
-    }
-    return [{ id: 'q1', label: 'Query 1', query: initialQuery, rangeMinutes: 60, selectedLevels: [] }];
-  });
-  const [activeTabId, setActiveTabId] = useState<string>(() => {
-    try {
-      const raw = window.localStorage.getItem(LOGS_TABS_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { activeTabId?: string; tabs?: QueryTabState[] };
-        if (
-          typeof parsed.activeTabId === 'string' &&
-          Array.isArray(parsed.tabs) &&
-          parsed.tabs.some((t) => t?.id === parsed.activeTabId) &&
-          (!initialQuery || initialQuery === '*')
-        ) {
-          return parsed.activeTabId;
-        }
-      }
-    } catch {
-      // Fallback to first tab
-    }
-    return 'q1';
-  });
-  const [editingTabId, setEditingTabId] = useState<string | null>(null);
-  const [editingTabLabel, setEditingTabLabel] = useState<string>('');
   const [executedNonce, setExecutedNonce] = useState<number>(1);
   const [showChart, setShowChart] = useState<boolean>(true);
   const [displayMode, setDisplayMode] = useState<'original' | 'table'>('original');
@@ -281,6 +134,29 @@ export function LogsExplorerView({
   const [drawerSize, setDrawerSize] = useState<'small' | 'medium' | 'large'>('medium');
   const [drawerTab, setDrawerTab] = useState<'table' | 'json'>('table');
   const [copiedJson, setCopiedJson] = useState<boolean>(false);
+
+  const resetPaginationAndSelection = useCallback(() => {
+    setCursorStack([]);
+    setPage(0);
+    setSelectedLogIndex(null);
+    setExpandedRows({});
+  }, []);
+
+  const {
+    tabs,
+    setActiveTabId,
+    activeTab,
+    editingTabId,
+    setEditingTabId,
+    editingTabLabel,
+    setEditingTabLabel,
+    debouncedQuery,
+    setDebouncedQuery,
+    updateActiveTab,
+    addTab,
+    closeTab,
+    commitTabRename,
+  } = useLogTabs(initialQuery, resetPaginationAndSelection);
 
   // Presets dialog state
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
@@ -298,20 +174,6 @@ export function LogsExplorerView({
   const [exportProgressCount, setExportProgressCount] = useState(0);
   const exportAbortRef = useRef<AbortController | null>(null);
 
-  const LOG_BATCH_SIZE = 200;
-  const LIVE_POLL_INTERVAL_MS = 1000;
-  const LIVE_FLUSH_INTERVAL_MS = 250;
-  const MAX_LIVE_BUFFER_LINES = 2000;
-
-  // Live Tail state & refs
-  const [liveMode, setLiveMode] = useState(false);
-  const [liveEntries, setLiveEntries] = useState<NormalizedLogEntry[]>([]);
-  const [liveError, setLiveError] = useState<string | null>(null);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const livePendingBufferRef = useRef<NormalizedLogEntry[]>([]);
-  const liveScrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const isProgrammaticScrollRef = useRef(false);
-
   const logAdapter: LogDatasourceAdapter | null = useMemo(
     () => (activeTarget ? createLogDatasourceAdapter(activeTarget) : null),
     [activeTarget],
@@ -322,67 +184,6 @@ export function LogsExplorerView({
     queryFn: fetchLogPresetsConfig,
   });
 
-  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
-  const [debouncedQuery, setDebouncedQuery] = useState<string>(activeTab.query);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedQuery(activeTab.query);
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [activeTab.query, activeTab.id]);
-
-  const updateActiveTab = (patch: Partial<QueryTabState>) => {
-    setTabs((prev) => prev.map((t) => (t.id === activeTab.id ? { ...t, ...patch } : t)));
-  };
-
-  const addTab = () => {
-    const num = tabs.length + 1;
-    const id = `q${Date.now()}`;
-    setTabs((prev) => [...prev, { id, label: `Query ${num}`, query: '*', rangeMinutes: 60, selectedLevels: [] }]);
-    setActiveTabId(id);
-    setDebouncedQuery('*');
-    setCursorStack([]);
-    setPage(0);
-    setSelectedLogIndex(null);
-    setExpandedRows({});
-  };
-
-  const closeTab = (tabId: string) => {
-    if (tabs.length <= 1) return;
-    const idx = tabs.findIndex((t) => t.id === tabId);
-    const nextTabs = tabs.filter((t) => t.id !== tabId);
-    setTabs(nextTabs);
-    if (activeTabId === tabId) {
-      const fallback = nextTabs[Math.max(0, idx - 1)] ?? nextTabs[0];
-      setActiveTabId(fallback.id);
-      setDebouncedQuery(fallback.query);
-      setCursorStack([]);
-      setPage(0);
-      setSelectedLogIndex(null);
-      setExpandedRows({});
-    }
-    if (editingTabId === tabId) {
-      setEditingTabId(null);
-    }
-  };
-
-  const commitTabRename = (tabId: string) => {
-    const trimmed = editingTabLabel.trim();
-    if (trimmed) {
-      setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, label: trimmed } : t)));
-    }
-    setEditingTabId(null);
-  };
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(LOGS_TABS_STORAGE_KEY, JSON.stringify({ tabs, activeTabId }));
-    } catch {
-      // Ignore storage quota errors
-    }
-  }, [tabs, activeTabId]);
-
   const effectiveQuery = useMemo(() => {
     const levelExpr = buildLogsQLLevelFilter(activeTab.selectedLevels);
     let q = injectLogsQLFilter(debouncedQuery, levelExpr);
@@ -392,6 +193,31 @@ export function LogsExplorerView({
     }
     return q;
   }, [debouncedQuery, activeTab.selectedLevels, lockedNamespace]);
+
+  const handleClearLiveSelection = useCallback(() => {
+    setExpandedRows({});
+    setSelectedLogIndex(null);
+  }, []);
+
+  const {
+    liveMode,
+    setLiveMode,
+    liveEntries,
+    liveError,
+    setLiveError,
+    autoScroll,
+    setAutoScroll,
+    liveScrollContainerRef,
+    liveVirtualizer,
+    handleLiveScroll,
+    handleResumeLiveScroll,
+    handleClearLiveLogs,
+  } = useLiveTail({
+    logAdapter,
+    effectiveQuery,
+    lineBreak,
+    onClearSelection: handleClearLiveSelection,
+  });
 
   const { startDate, endDate } = useMemo(() => {
     if (activeTab.customStartIso && activeTab.customEndIso) {
@@ -516,100 +342,15 @@ export function LogsExplorerView({
 
   const maxBucketCount = Math.max(1, ...effectiveBuckets.map((b) => b.count));
 
-  // Live Tail: 1s incremental delta-polling + 250ms batched UI flush + 2,000-line FIFO ring buffer
-  useEffect(() => {
-    if (!liveMode || !logAdapter) return;
-
-    setLiveError(null);
-    setLiveEntries([]);
-    livePendingBufferRef.current = [];
-
-    const handle = logAdapter.startLiveTail({
-      query: effectiveQuery,
-      pollIntervalMs: LIVE_POLL_INTERVAL_MS,
-      initialLookbackSeconds: 60,
-      limitPerPoll: 500,
-      onEntries: (batch) => {
-        if (batch.length > 0) {
-          livePendingBufferRef.current.push(...batch);
-        }
-      },
-      onError: (err) => {
-        setLiveError(err.message);
-      },
-    });
-
-    const flushTimer = window.setInterval(() => {
-      if (livePendingBufferRef.current.length === 0) return;
-      const batch = livePendingBufferRef.current.splice(0);
-      setLiveEntries((prev) => {
-        const combined = prev.length === 0 ? batch : [...prev, ...batch];
-        return combined.length > MAX_LIVE_BUFFER_LINES
-          ? combined.slice(combined.length - MAX_LIVE_BUFFER_LINES)
-          : combined;
-      });
-    }, LIVE_FLUSH_INTERVAL_MS);
-
-    return () => {
-      handle.stop();
-      window.clearInterval(flushTimer);
-      livePendingBufferRef.current = [];
-    };
-  }, [liveMode, logAdapter, effectiveQuery]);
-
-  const entries: NormalizedLogEntry[] = liveMode ? liveEntries : (logsResult?.entries ?? []);
+  const entries: NormalizedLogEntry[] = useMemo(
+    () => (liveMode ? liveEntries : (logsResult?.entries ?? [])),
+    [liveMode, liveEntries, logsResult?.entries],
+  );
   const pagedEntries = useMemo(() => {
     if (liveMode) return entries;
     const start = page * rowsPerPage;
     return entries.slice(start, start + rowsPerPage);
   }, [entries, page, rowsPerPage, liveMode]);
-
-  const liveVirtualizer = useVirtualizer({
-    count: liveMode ? entries.length : 0,
-    getScrollElement: () => liveScrollContainerRef.current,
-    estimateSize: () => (lineBreak ? 56 : 36),
-    overscan: 12,
-  });
-
-  useEffect(() => {
-    if (!liveMode || !autoScroll || entries.length === 0) return;
-    isProgrammaticScrollRef.current = true;
-    liveVirtualizer.scrollToIndex(entries.length - 1, { align: 'end' });
-    const raf = window.requestAnimationFrame(() => {
-      isProgrammaticScrollRef.current = false;
-    });
-    return () => window.cancelAnimationFrame(raf);
-  }, [liveMode, autoScroll, entries, liveVirtualizer]);
-
-  const handleLiveScroll = useCallback(() => {
-    if (!liveMode || isProgrammaticScrollRef.current) return;
-    const el = liveScrollContainerRef.current;
-    if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceFromBottom > 48 && autoScroll) {
-      setAutoScroll(false);
-    } else if (distanceFromBottom <= 16 && !autoScroll) {
-      setAutoScroll(true);
-    }
-  }, [liveMode, autoScroll]);
-
-  const handleResumeLiveScroll = useCallback(() => {
-    setAutoScroll(true);
-    if (entries.length > 0) {
-      isProgrammaticScrollRef.current = true;
-      liveVirtualizer.scrollToIndex(entries.length - 1, { align: 'end' });
-      window.requestAnimationFrame(() => {
-        isProgrammaticScrollRef.current = false;
-      });
-    }
-  }, [entries.length, liveVirtualizer]);
-
-  const handleClearLiveLogs = useCallback(() => {
-    livePendingBufferRef.current = [];
-    setLiveEntries([]);
-    setExpandedRows({});
-    setSelectedLogIndex(null);
-  }, []);
 
   const selectedEntry = useMemo(
     () => (selectedLogIndex !== null && entries[selectedLogIndex] ? toFlatLogRecord(entries[selectedLogIndex]) : null),
@@ -1878,114 +1619,26 @@ export function LogsExplorerView({
         )}
       </Card>
 
-      {/* Create / Edit Log Preset Dialog */}
-      <Dialog open={presetDialogOpen} onClose={() => setPresetDialogOpen(false)} maxWidth="sm" fullWidth>
-        <Box component="form" onSubmit={handleSavePreset}>
-          <DialogTitle>{presetMode === 'create' ? 'Save Shared Log Preset' : 'Edit Log Preset'}</DialogTitle>
-          <DialogContent dividers>
-            <Stack spacing={2}>
-              {presetError && <Alert severity="error">{presetError}</Alert>}
-              <TextField
-                label="Preset Name"
-                placeholder="e.g. Ingress 5xx Errors"
-                value={presetLabel}
-                onChange={(e) => setPresetLabel(e.target.value)}
-                required
-                fullWidth
-                size="small"
-              />
-              <TextField
-                label="LogsQL Query"
-                value={presetQuery}
-                onChange={(e) => setPresetQuery(e.target.value)}
-                required
-                fullWidth
-                multiline
-                minRows={2}
-                size="small"
-                InputProps={{ sx: { fontFamily: 'monospace', fontSize: 12.5 } }}
-              />
-              <TextField
-                label="Description (optional)"
-                value={presetDesc}
-                onChange={(e) => setPresetDesc(e.target.value)}
-                fullWidth
-                size="small"
-              />
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setPresetDialogOpen(false)} disabled={presetSaving}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="contained" disabled={presetSaving}>
-              {presetSaving ? 'Saving...' : 'Save Preset'}
-            </Button>
-          </DialogActions>
-        </Box>
-      </Dialog>
-
-      {/* Manage Presets Dialog */}
-      <Dialog open={managePresetsOpen} onClose={() => setManagePresetsOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Manage Shared Log Presets</DialogTitle>
-        <DialogContent dividers>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Label</TableCell>
-                <TableCell>LogsQL Query</TableCell>
-                <TableCell align="right" width={96}>
-                  Actions
-                </TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {presets.map((preset) => (
-                <TableRow key={preset.id} hover>
-                  <TableCell sx={{ fontWeight: 600 }}>{preset.label}</TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 11.5 }}>{preset.query}</TableCell>
-                  <TableCell align="right">
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        setManagePresetsOpen(false);
-                        openEditPreset(preset);
-                      }}
-                    >
-                      <PencilOutline fontSize="small" />
-                    </IconButton>
-                    <Tooltip title={presets.length <= 1 ? 'At least one preset is required' : 'Delete preset'}>
-                      <span>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          disabled={presets.length <= 1}
-                          onClick={() => void handleDeletePreset(preset)}
-                        >
-                          <DeleteOutline fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            variant="outlined"
-            startIcon={<Plus />}
-            onClick={() => {
-              setManagePresetsOpen(false);
-              openCreatePreset();
-            }}
-          >
-            Add Preset
-          </Button>
-          <Button onClick={() => setManagePresetsOpen(false)}>Close</Button>
-        </DialogActions>
-      </Dialog>
+      <LogsPresetDialogs
+        presetDialogOpen={presetDialogOpen}
+        onClosePresetDialog={() => setPresetDialogOpen(false)}
+        presetMode={presetMode}
+        presetLabel={presetLabel}
+        onChangePresetLabel={setPresetLabel}
+        presetQuery={presetQuery}
+        onChangePresetQuery={setPresetQuery}
+        presetDesc={presetDesc}
+        onChangePresetDesc={setPresetDesc}
+        presetSaving={presetSaving}
+        presetError={presetError}
+        onSavePreset={handleSavePreset}
+        managePresetsOpen={managePresetsOpen}
+        onCloseManagePresets={() => setManagePresetsOpen(false)}
+        presets={presets}
+        onEditPreset={openEditPreset}
+        onDeletePreset={(preset) => void handleDeletePreset(preset)}
+        onAddPreset={openCreatePreset}
+      />
 
       <LogDetailDrawer
         selectedEntry={selectedEntry}

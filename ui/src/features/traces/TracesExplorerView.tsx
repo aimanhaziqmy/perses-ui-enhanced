@@ -34,17 +34,16 @@ import { useNavigate } from 'react-router-dom';
 
 import { TraceDetailDrawer } from './TraceDetailDrawer';
 
+import { datasourceTargetKey, useDatasourceTargets } from '@/lib/api/datasources';
+import { queryKeys } from '@/lib/api/queryKeys';
 import {
   type TraceDetail,
   type TraceSpan,
-  datasourceTargetKey,
   fetchTraceById,
   fetchTraceOperations,
   fetchTraceServices,
-  queryKeys,
   searchTraces,
-  useDatasourceTargets,
-} from '@/api/persesClient';
+} from './api/traces';
 
 const TIME_RANGES = [
   { label: 'Last 15 minutes', minutes: 15 },

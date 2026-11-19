@@ -20,7 +20,7 @@ import type { DatasourceResource, GlobalDatasourceResource, ProjectResource } fr
 import { getResourceDisplayName } from '@perses-dev/components';
 import React from 'react';
 
-import type { DatasourceProbeResult } from '@/api/persesClient';
+import type { DatasourceProbeResult } from '@/lib/api/datasources';
 import { JsonViewer } from '@/components/ui/JsonViewer';
 
 export type UnifiedDatasourceItem =
