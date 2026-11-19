@@ -103,6 +103,7 @@ export function DashboardsView({
   const embedProject = embedMatch ? decodeURIComponent(embedMatch[1]) : embedSearchParams.get('project') || '';
   const embedDashboard = embedMatch ? decodeURIComponent(embedMatch[2]) : embedSearchParams.get('dashboard') || '';
   const embedPanelKey = isEmbed ? embedSearchParams.get('panel') || '' : '';
+  const embedBare = isEmbed && embedSearchParams.get('bare') === '1';
 
   const [viewMode, setViewMode] = useState<'list' | 'detail'>(() =>
     isEmbed || (embedProject && embedDashboard) ? 'detail' : 'list',
@@ -138,6 +139,7 @@ export function DashboardsView({
   const [shareScope, setShareScope] = useState<'dashboard' | 'panel'>('dashboard');
   const [sharePanelKey, setSharePanelKey] = useState<string>('');
   const [shareVisibility, setShareVisibility] = useState<'private' | 'public'>('private');
+  const [shareBare, setShareBare] = useState<boolean>(false);
   const [shareNamespaceScope, setShareNamespaceScope] = useState<string>('*');
   const [shareSaving, setShareSaving] = useState<boolean>(false);
   const [shareError, setShareError] = useState<string | null>(null);
@@ -319,6 +321,7 @@ export function DashboardsView({
     const firstPanel = Object.keys(dash.spec?.panels ?? {})[0] ?? '';
     setSharePanelKey(firstPanel);
     setShareVisibility('private');
+    setShareBare(false);
     setShareNamespaceScope('*');
     setShareError(null);
     setShareCopied(null);
@@ -1223,6 +1226,26 @@ export function DashboardsView({
               alignItems: 'center',
               background: 'transparent',
             },
+            // In embed mode:
+            // - ?bare=1 hides the entire DashboardToolbar so only the chart/dashboard renders.
+            // - Standard embed hides the title + Edit button row and any empty variable bar
+            //   while keeping TimeRangeControls, refresh, download, and active variable filters.
+            ...(isEmbed && embedBare
+              ? {
+                  '& [data-testid="dashboard-toolbar"]': {
+                    display: 'none',
+                  },
+                }
+              : isEmbed
+                ? {
+                    '& [data-testid="dashboard-toolbar"] > .MuiBox-root:first-of-type': {
+                      display: 'none',
+                    },
+                    '& [data-testid="dashboard-toolbar"] > .MuiBox-root:last-of-type > .MuiBox-root:first-of-type:not(:has(input, button, [role="combobox"]))': {
+                      display: 'none',
+                    },
+                  }
+                : {}),
           }}
         >
           <ErrorBoundary FallbackComponent={ErrorAlert}>
@@ -1338,6 +1361,8 @@ export function DashboardsView({
         onChangeSharePanelKey={setSharePanelKey}
         shareVisibility={shareVisibility}
         onChangeShareVisibility={setShareVisibility}
+        shareBare={shareBare}
+        onChangeShareBare={setShareBare}
         shareCopied={shareCopied}
         onSetShareCopied={setShareCopied}
         isSiteAdmin={isSiteAdmin}

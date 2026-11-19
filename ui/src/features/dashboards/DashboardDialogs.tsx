@@ -87,6 +87,8 @@ export interface DashboardDialogsProps {
   onChangeSharePanelKey: (val: string) => void;
   shareVisibility: 'private' | 'public';
   onChangeShareVisibility: (val: 'private' | 'public') => void;
+  shareBare: boolean;
+  onChangeShareBare: (val: boolean) => void;
   shareCopied: 'url' | 'iframe' | null;
   onSetShareCopied: React.Dispatch<React.SetStateAction<'url' | 'iframe' | null>>;
   isSiteAdmin: boolean;
@@ -153,6 +155,8 @@ export function DashboardDialogs({
   onChangeSharePanelKey,
   shareVisibility,
   onChangeShareVisibility,
+  shareBare,
+  onChangeShareBare,
   shareCopied,
   onSetShareCopied,
   isSiteAdmin,
@@ -415,6 +419,9 @@ export function DashboardDialogs({
             if (shareScope === 'panel' && sharePanelKey) {
               params.set('panel', sharePanelKey);
             }
+            if (shareBare) {
+              params.set('bare', '1');
+            }
             if (shareVisibility === 'public' && activePublicShare?.token) {
               params.set('share', activePublicShare.token);
             }
@@ -489,6 +496,19 @@ export function DashboardDialogs({
                     </Select>
                   </FormControl>
                 )}
+
+                <FormControl size="small" fullWidth>
+                  <InputLabel id="share-display-label">Embed Layout</InputLabel>
+                  <Select
+                    labelId="share-display-label"
+                    label="Embed Layout"
+                    value={shareBare ? 'bare' : 'controls'}
+                    onChange={(e) => onChangeShareBare(e.target.value === 'bare')}
+                  >
+                    <MenuItem value="controls">Standard (With Time Range &amp; Filter Controls)</MenuItem>
+                    <MenuItem value="bare">Bare (Dashboard / Panel Only — No Toolbar)</MenuItem>
+                  </Select>
+                </FormControl>
 
                 {shareVisibility === 'public' ? (
                   <Stack spacing={1.5}>

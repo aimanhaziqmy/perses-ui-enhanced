@@ -44,6 +44,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
   const activeKey = navKeyFromPath(location.pathname);
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const isEmbedRoute = location.pathname.startsWith('/embed/') || searchParams.get('embed') === '1';
+  const isBareEmbed = isEmbedRoute && searchParams.get('bare') === '1';
   const shareToken = isEmbedRoute ? (searchParams.get('share') || '').trim() : '';
   const isPublicEmbed = isEmbedRoute && Boolean(shareToken);
 
@@ -286,7 +287,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
           />
         )}
 
-        <Box component="main" sx={{ flex: 1, p: isEmbedRoute ? 1 : isFullscreen ? 1.5 : { xs: 1.5, md: 2 }, minHeight: 0 }}>
+        <Box component="main" sx={{ flex: 1, p: isEmbedRoute ? (isBareEmbed ? 0 : 1) : isFullscreen ? 1.5 : { xs: 1.5, md: 2 }, minHeight: 0 }}>
           {isNamespaceScoped && !loadingWorkspaceMap && userWorkspaces.length === 0 && (
             <Alert severity="warning" sx={{ mb: 1.5 }}>
               No Kubernetes workspace namespace is assigned to account <strong>{currentUsername}</strong> yet. Metrics and
