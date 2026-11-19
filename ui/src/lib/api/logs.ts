@@ -549,10 +549,10 @@ export async function queryVictoriaLogsLevelHistogram(
     const prefix = extraPipes ? `${baseFilter} ${extraPipes}` : baseFilter;
     const statsQuery =
       `${prefix} | stats by (_time:${safeStep}s) count() switch(` +
-      `case (${ERR_FIELDS_LOGSQL}) as error, ` +
-      `case (${WARN_FIELDS_LOGSQL}) as warning, ` +
-      `case (${DEBUG_FIELDS_LOGSQL}) as debug, ` +
-      `case (${INFO_FIELDS_LOGSQL}) as info, ` +
+      `case (${ERR_LOGSQL}) as error, ` +
+      `case (${WARN_LOGSQL}) as warning, ` +
+      `case (${DEBUG_LOGSQL}) as debug, ` +
+      `case (${INFO_LOGSQL}) as info, ` +
       `default as other)`;
 
     try {
