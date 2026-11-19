@@ -13,7 +13,8 @@ import ChevronDown from 'mdi-material-ui/ChevronDown';
 import ChevronRight from 'mdi-material-ui/ChevronRight';
 import React, { useState } from 'react';
 
-import type { AppViewKey, SiteBrandingConfig } from '@/api/persesClient';
+import type { SiteBrandingConfig } from '@/lib/api/branding';
+import type { AppViewKey } from '@/lib/api/viewPermissions';
 import type { ThemeMode } from '@/theme/persesTheme';
 import {
   MoonIcon,
@@ -28,19 +29,7 @@ import {
   SunIcon,
 } from '@/components/ui/BrandIcons';
 
-export type NavKey =
-  | 'metrics'
-  | 'logs'
-  | 'traces'
-  | 'dashboards'
-  | 'alerts'
-  | 'events'
-  | 'hosts'
-  | 'datasources'
-  | 'users'
-  | 'roles'
-  | 'settings'
-  | 'about';
+export type NavKey = AppViewKey;
 
 export interface NavSection {
   id: string;

@@ -8,8 +8,8 @@ import { CanvasRenderer } from 'echarts/renderers';
 import type React from 'react';
 import { useCallback, useMemo, useRef } from 'react';
 
-import type { HistogramGroupBy, LogLevel, VictoriaLogGroupHitBucket, VictoriaLogHitBucket } from '@/api/persesClient';
-import { ALL_LOG_LEVELS } from '@/api/persesClient';
+import type { HistogramGroupBy, LogLevel, VictoriaLogGroupHitBucket, VictoriaLogHitBucket } from '@/lib/api/logs';
+import { ALL_LOG_LEVELS } from '@/lib/api/logs';
 
 echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer]);
 

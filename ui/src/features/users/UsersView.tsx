@@ -46,8 +46,10 @@ import ShieldAccount from 'mdi-material-ui/ShieldAccount';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useMemo, useState } from 'react';
 
+import { getCurrentPersesUsername } from '@/lib/api/auth';
+import { ForbiddenError } from '@/lib/api/http';
+import { fetchProjects } from '@/lib/api/projects';
 import {
-  ForbiddenError,
   assignUserGlobalRoles,
   assignUserProjectRoles,
   createPersesUser,
@@ -58,10 +60,8 @@ import {
   fetchPersesUsers,
   fetchProjectRoleBindings,
   fetchProjectRoles,
-  fetchProjects,
-  getCurrentPersesUsername,
   updatePersesUser,
-} from '@/api/persesClient';
+} from '@/lib/api/rbac';
 
 function formatIso(ts?: string): string {
   if (!ts) return '-';

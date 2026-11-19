@@ -23,14 +23,10 @@ import Refresh from 'mdi-material-ui/Refresh';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
-import type { BackendAlertItem, BackendRuleGroup } from '@/api/persesClient';
-import {
-  datasourceTargetKey,
-  fetchBackendAlertRules,
-  fetchBackendAlerts,
-  queryKeys,
-  useDatasourceTargets,
-} from '@/api/persesClient';
+import { datasourceTargetKey, useDatasourceTargets } from '@/lib/api/datasources';
+import { queryKeys } from '@/lib/api/queryKeys';
+import type { BackendAlertItem, BackendRuleGroup } from './api/alerts';
+import { fetchBackendAlertRules, fetchBackendAlerts } from './api/alerts';
 import { ViewEmptyState, ViewLoadingState } from '@/components/ui/ViewStates';
 
 export function BackendAlertsPanel() {

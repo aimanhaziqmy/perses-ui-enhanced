@@ -8,7 +8,7 @@ import { buildProxyUrl } from '@perses-dev/client';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
-import { fetchProjects } from '@/features/dashboards/api/dashboards';
+import { fetchProjects } from './projects';
 import {
   ForbiddenError,
   UnauthorizedError,

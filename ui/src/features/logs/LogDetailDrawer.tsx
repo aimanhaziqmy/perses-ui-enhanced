@@ -18,8 +18,8 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
-import type { LogLevel, VictoriaLogEntry } from '@/api/persesClient';
-import { classifyLogLevel } from '@/api/persesClient';
+import type { LogLevel, VictoriaLogEntry } from '@/lib/api/logs';
+import { classifyLogLevel } from '@/lib/api/logs';
 import { JsonViewer } from '@/components/ui/JsonViewer';
 import { LOG_LEVEL_META } from './LogsHistogramChart';
 

@@ -49,35 +49,35 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { datasourceTargetKey, useDatasourceTargets } from '@/lib/api/datasources';
+import { ForbiddenError } from '@/lib/api/http';
 import type {
   HistogramGroupBy,
-  LogDatasourceAdapter,
   LogLevel,
   LogPresetItem,
-  LogQueryResult,
-  NormalizedLogEntry,
   VictoriaLogGroupHitBucket,
   VictoriaLogHitBucket,
-} from '@/api/persesClient';
+} from '@/lib/api/logs';
 import {
   ALL_LOG_LEVELS,
   DEFAULT_LOG_PRESETS,
-  ForbiddenError,
   buildLogsQLLevelFilter,
-  createLogDatasourceAdapter,
-  datasourceTargetKey,
   fetchLogPresetsConfig,
   fetchVictoriaLogsChunked,
   hasCustomLimitOrTransformPipe,
   injectLogsQLFilter,
-  queryKeys,
   queryVictoriaLogsFieldHistogram,
   queryVictoriaLogsLevelHistogram,
   saveLogPresetsConfig,
   setLocalLogPresets,
-  toFlatLogRecord,
-  useDatasourceTargets,
-} from '@/api/persesClient';
+} from '@/lib/api/logs';
+import { queryKeys } from '@/lib/api/queryKeys';
+import type {
+  LogDatasourceAdapter,
+  LogQueryResult,
+  NormalizedLogEntry,
+} from './api/logDatasource';
+import { createLogDatasourceAdapter, toFlatLogRecord } from './api/logDatasource';
 import type { ExportFormat } from '@/lib/export/exportRecords';
 import { exportRawJsonlLinesToFile, exportRecordsToFile } from '@/lib/export/exportRecords';
 import { VictoriaLogsBrandIcon } from '@/components/ui/BrandIcons';

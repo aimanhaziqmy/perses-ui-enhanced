@@ -33,9 +33,8 @@ import Refresh from 'mdi-material-ui/Refresh';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { DatasourceProbeResult } from '@/api/persesClient';
+import type { DatasourceProbeResult } from '@/lib/api/datasources';
 import {
-  ForbiddenError,
   createGlobalDatasource,
   createProjectDatasource,
   datasourceTargetKey,
@@ -43,11 +42,12 @@ import {
   deleteProjectDatasource,
   fetchGlobalDatasources,
   fetchProjectDatasources,
-  fetchProjects,
   probeDatasource,
   updateGlobalDatasource,
   updateProjectDatasource,
-} from '@/api/persesClient';
+} from '@/lib/api/datasources';
+import { ForbiddenError } from '@/lib/api/http';
+import { fetchProjects } from '@/lib/api/projects';
 import { JaegerBrandIcon, PrometheusBrandIcon, VictoriaLogsBrandIcon } from '@/components/ui/BrandIcons';
 import { DatasourceDialogs, type DatasourceFormState, type UnifiedDatasourceItem } from './DatasourceDialogs';
 

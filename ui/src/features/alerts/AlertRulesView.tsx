@@ -40,23 +40,19 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import type {
-  AlertRuleDefinition,
-  LiveAlertRuleEvaluation,
-  VictoriaLogsQueryResult,
-} from '@/api/persesClient';
+import { getCurrentPersesUsername } from '@/lib/api/auth';
+import { datasourceTargetKey, useDatasourceTargets } from '@/lib/api/datasources';
+import { ForbiddenError } from '@/lib/api/http';
+import type { VictoriaLogsQueryResult } from '@/lib/api/logs';
+import { queryVictoriaLogs } from '@/lib/api/logs';
+import { queryKeys } from '@/lib/api/queryKeys';
+import type { AlertRuleDefinition, LiveAlertRuleEvaluation } from './api/alerts';
 import {
   DEFAULT_ALERT_RULES,
-  ForbiddenError,
-  datasourceTargetKey,
   evaluateLiveAlertRules,
   fetchAlertRulesConfig,
-  getCurrentPersesUsername,
-  queryKeys,
-  queryVictoriaLogs,
   saveAlertRulesConfig,
-  useDatasourceTargets,
-} from '@/api/persesClient';
+} from './api/alerts';
 import type { ExportFormat } from '@/lib/export/exportRecords';
 import { exportRecordsToFile } from '@/lib/export/exportRecords';
 import { AlertRuleDialogs, type RuleFormState } from './AlertRuleDialogs';

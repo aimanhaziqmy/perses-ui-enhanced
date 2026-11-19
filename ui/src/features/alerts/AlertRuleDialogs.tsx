@@ -18,13 +18,13 @@ import {
 } from '@mui/material';
 import React from 'react';
 
+import type { DatasourceTarget } from '@/lib/api/datasources';
+import { datasourceTargetKey } from '@/lib/api/datasources';
 import type {
   AlertRuleConditionOp,
   AlertRuleDefinition,
-  DatasourceTarget,
   LiveAlertRuleEvaluation,
-} from '@/api/persesClient';
-import { datasourceTargetKey } from '@/api/persesClient';
+} from './api/alerts';
 import { JsonViewer } from '@/components/ui/JsonViewer';
 
 export interface RuleFormState {

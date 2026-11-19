@@ -29,13 +29,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import type { LiveHostRecord } from '@/api/persesClient';
-import {
-  datasourceTargetKey,
-  fetchLiveClusterHosts,
-  queryKeys,
-  useDatasourceTargets,
-} from '@/api/persesClient';
+import { datasourceTargetKey, useDatasourceTargets } from '@/lib/api/datasources';
+import type { LiveHostRecord } from '@/lib/api/metrics';
+import { fetchLiveClusterHosts } from '@/lib/api/metrics';
+import { queryKeys } from '@/lib/api/queryKeys';
 import { OsBadgeIcon } from '@/components/ui/BrandIcons';
 import {
   MiniHistogramCard,

@@ -45,22 +45,20 @@ import { useLocation } from 'react-router-dom';
 
 import { DashboardDialogs } from './DashboardDialogs';
 
+import { usePersesDatasourceApi } from '@/lib/api/datasources';
+import { ForbiddenError } from '@/lib/api/http';
+import { createProject, deleteProject, fetchProjects } from '@/lib/api/projects';
 import {
-  ForbiddenError,
   countUnsupportedMigratedQueries,
   createDashboard,
-  createProject,
   deleteDashboard,
-  deleteProject,
   fetchDashboard,
   fetchDashboards,
-  fetchProjects,
   isGrafanaDashboardJson,
   migrateGrafanaDashboard,
   unwrapGrafanaDashboard,
   updateDashboard,
-  usePersesDatasourceApi,
-} from '@/api/persesClient';
+} from './api/dashboards';
 
 export function DashboardsView({
   isEmbed = false,
