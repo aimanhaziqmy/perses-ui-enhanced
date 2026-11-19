@@ -77,6 +77,22 @@ describe('nginx njs gateway enforcement (audit.js)', () => {
     };
     expect(resolveAllowedNamespaces(oidcMap, 'opkang', ['opkang'])).toEqual(['ns-opkang']);
     expect(resolveAllowedNamespaces(oidcMap, 'chloh', ['chloh', 'c944c09a-uuid'])).toEqual(['ns-opkang']);
+
+    const namespaceListMap = {
+      enabled: true,
+      data: {
+        kind: 'NamespaceList',
+        items: [
+          {
+            metadata: {
+              name: 'bq52f6',
+              labels: { 'user.otterscale.io/alice': 'true' },
+            },
+          },
+        ],
+      },
+    };
+    expect(resolveAllowedNamespaces(namespaceListMap, 'alice', ['alice'])).toEqual(['bq52f6']);
   });
 
   it('rewrites VictoriaLogs, Prometheus, and Jaeger proxy requests server-side', () => {

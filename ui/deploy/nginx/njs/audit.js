@@ -184,13 +184,27 @@ function resolveAllowedNamespaces(workspaceMap, username, subjectOrList) {
     var item = items[i] || {};
     var meta = item.metadata || {};
     var spec = item.spec || {};
-    var ns = String(spec.namespace || '').trim();
+    var status = item.status || {};
+    var labels = meta.labels || {};
+    var labelKeys = Object.keys(labels);
+    var nsLabel = '';
+    for (var nlIdx = 0; nlIdx < labelKeys.length; nlIdx++) {
+      if (labelKeys[nlIdx].endsWith('/namespace')) {
+        nsLabel = String(labels[labelKeys[nlIdx]] || '').trim();
+        break;
+      }
+    }
+    var ns = String(
+      spec.namespace ||
+        (status.namespaceRef && status.namespaceRef.name) ||
+        nsLabel ||
+        meta.name ||
+        '',
+    ).trim();
     if (!ns) {
       continue;
     }
-    var labels = meta.labels || {};
     var hasLabelMatch = false;
-    var labelKeys = Object.keys(labels);
     for (var j = 0; j < labelKeys.length; j++) {
       var lk = labelKeys[j];
       if (labels[lk] !== 'true') {
