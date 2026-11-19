@@ -49,6 +49,15 @@ import { usePersesDatasourceApi } from '@/lib/api/datasources';
 import { ForbiddenError } from '@/lib/api/http';
 import { createProject, deleteProject, fetchProjects } from '@/lib/api/projects';
 import {
+  type PublicSharesConfig,
+  fetchPublicShares,
+  findShareForTarget,
+  revokePublicShare,
+  savePublicShares,
+  upsertPublicShare,
+} from '@/lib/api/publicShares';
+import { queryKeys } from '@/lib/api/queryKeys';
+import {
   countUnsupportedMigratedQueries,
   createDashboard,
   deleteDashboard,
@@ -68,6 +77,10 @@ export function DashboardsView({
   canCreateProject = true,
   canDeleteProject = () => true,
   canManageDashboards = () => true,
+  isSiteAdmin = false,
+  currentUsername = '',
+  availableNamespaces = [],
+  guestDashboardsEnabled = false,
 }: {
   isEmbed?: boolean;
   isFullscreen?: boolean;
@@ -76,6 +89,10 @@ export function DashboardsView({
   canCreateProject?: boolean;
   canDeleteProject?: (project?: string) => boolean;
   canManageDashboards?: (project?: string) => boolean;
+  isSiteAdmin?: boolean;
+  currentUsername?: string;
+  availableNamespaces?: string[];
+  guestDashboardsEnabled?: boolean;
 }) {
   const muiTheme = useTheme();
   const queryClient = useQueryClient();
@@ -121,6 +138,9 @@ export function DashboardsView({
   const [shareScope, setShareScope] = useState<'dashboard' | 'panel'>('dashboard');
   const [sharePanelKey, setSharePanelKey] = useState<string>('');
   const [shareVisibility, setShareVisibility] = useState<'private' | 'public'>('private');
+  const [shareNamespaceScope, setShareNamespaceScope] = useState<string>('*');
+  const [shareSaving, setShareSaving] = useState<boolean>(false);
+  const [shareError, setShareError] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState<'url' | 'iframe' | null>(null);
 
   // Project create/delete dialogs
@@ -159,12 +179,19 @@ export function DashboardsView({
 
   const {
     data: projects,
-    isLoading: loadingProjects,
+    isInitialLoading: loadingProjects,
     error: projectsError,
   } = useQuery<ProjectResource[], Error>({
     queryKey: ['perses', 'projects'],
     queryFn: fetchProjects,
     enabled: !isEmbed,
+  });
+
+  const { data: publicSharesConfig = { shares: [] } } = useQuery<PublicSharesConfig, Error>({
+    queryKey: queryKeys.publicShares,
+    queryFn: fetchPublicShares,
+    enabled: !isEmbed && isSiteAdmin,
+    retry: false,
   });
 
   useEffect(() => {
@@ -270,13 +297,67 @@ export function DashboardsView({
     };
   }, [activeDashboard, isEmbed, embedPanelKey]);
 
+  const activePublicShare = useMemo(() => {
+    if (!shareTarget) return undefined;
+    return findShareForTarget(
+      publicSharesConfig,
+      shareTarget.project,
+      shareTarget.dashboard.metadata.name,
+      shareScope === 'panel' ? sharePanelKey : undefined,
+    );
+  }, [publicSharesConfig, shareTarget, shareScope, sharePanelKey]);
+
+  useEffect(() => {
+    if (activePublicShare) {
+      setShareNamespaceScope(activePublicShare.allowedNamespaces[0] || '*');
+    }
+  }, [activePublicShare]);
+
   const openShareModal = (projectName: string, dash: DashboardResource) => {
     setShareTarget({ project: projectName, dashboard: dash });
     setShareScope('dashboard');
     const firstPanel = Object.keys(dash.spec?.panels ?? {})[0] ?? '';
     setSharePanelKey(firstPanel);
     setShareVisibility('private');
+    setShareNamespaceScope('*');
+    setShareError(null);
     setShareCopied(null);
+  };
+
+  const handlePublishPublicShare = async () => {
+    if (!shareTarget || !isSiteAdmin) return;
+    setShareSaving(true);
+    setShareError(null);
+    try {
+      const { config: nextConfig } = upsertPublicShare(publicSharesConfig, {
+        project: shareTarget.project,
+        dashboard: shareTarget.dashboard.metadata.name,
+        panel: shareScope === 'panel' ? sharePanelKey : undefined,
+        allowedNamespaces: [shareNamespaceScope || '*'],
+        createdBy: currentUsername || 'admin',
+      });
+      const saved = await savePublicShares(nextConfig);
+      queryClient.setQueryData(queryKeys.publicShares, saved);
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setShareSaving(false);
+    }
+  };
+
+  const handleRevokePublicShare = async () => {
+    if (!activePublicShare || !isSiteAdmin) return;
+    setShareSaving(true);
+    setShareError(null);
+    try {
+      const nextConfig = revokePublicShare(publicSharesConfig, activePublicShare.token);
+      const saved = await savePublicShares(nextConfig);
+      queryClient.setQueryData(queryKeys.publicShares, saved);
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setShareSaving(false);
+    }
   };
 
   const datasourceApi = usePersesDatasourceApi(selectedProject || undefined);
@@ -706,7 +787,7 @@ export function DashboardsView({
     return filteredProjectRows.slice(start, start + projectsPerPage);
   }, [filteredProjectRows, projectPage, projectsPerPage]);
 
-  if (loadingProjects) {
+  if (!isEmbed && loadingProjects) {
     return (
       <Stack alignItems="center" justifyContent="center" sx={{ py: 8 }}>
         <CircularProgress />
@@ -1127,7 +1208,23 @@ export function DashboardsView({
       )}
 
       {displayedDashboard && (
-        <Box sx={{ flex: 1, minHeight: 0 }}>
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            // Fix upstream @perses-dev/dashboards@0.55.1 PanelActions layout bug where
+            // hovering sets --panel-hover: block and OverflowMenu renders a block Box
+            // with background.default, forcing a line break inside the panel header.
+            '& .MuiCard-root:hover': {
+              '--panel-hover': 'inline-flex',
+            },
+            '& .MuiCardHeader-root .MuiBox-root:has(> .show-actions)': {
+              display: 'inline-flex',
+              alignItems: 'center',
+              background: 'transparent',
+            },
+          }}
+        >
           <ErrorBoundary FallbackComponent={ErrorAlert}>
             <ViewDashboard
               key={`${displayedDashboard.metadata.project}/${displayedDashboard.metadata.name}/${embedPanelKey}`}
@@ -1243,6 +1340,16 @@ export function DashboardsView({
         onChangeShareVisibility={setShareVisibility}
         shareCopied={shareCopied}
         onSetShareCopied={setShareCopied}
+        isSiteAdmin={isSiteAdmin}
+        guestDashboardsEnabled={guestDashboardsEnabled}
+        availableNamespaces={availableNamespaces}
+        shareNamespaceScope={shareNamespaceScope}
+        onChangeShareNamespaceScope={setShareNamespaceScope}
+        activePublicShare={activePublicShare}
+        shareSaving={shareSaving}
+        shareError={shareError}
+        onPublishPublicShare={() => void handlePublishPublicShare()}
+        onRevokePublicShare={() => void handleRevokePublicShare()}
       />
     </Stack>
   );

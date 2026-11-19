@@ -73,6 +73,9 @@ export interface AppRoutesProps {
   logsInitialQuery: string;
   isNamespaceScoped: boolean;
   isSiteAdmin: boolean;
+  currentUsername: string;
+  availableNamespaces: string[];
+  guestDashboardsEnabled: boolean;
   loadingPermissions: boolean;
   capabilities: UiCapabilities;
   branding: SiteBrandingConfig;
@@ -92,6 +95,9 @@ export function AppRoutes({
   logsInitialQuery,
   isNamespaceScoped,
   isSiteAdmin,
+  currentUsername,
+  availableNamespaces,
+  guestDashboardsEnabled,
   loadingPermissions,
   capabilities,
   branding,
@@ -117,6 +123,10 @@ export function AppRoutes({
               canCreateProject={capabilities.canCreateProject}
               canDeleteProject={capabilities.canDeleteProject}
               canManageDashboards={capabilities.canManageDashboards}
+              isSiteAdmin={isSiteAdmin}
+              currentUsername={currentUsername}
+              availableNamespaces={availableNamespaces}
+              guestDashboardsEnabled={guestDashboardsEnabled}
             />
           </RouteView>
         }

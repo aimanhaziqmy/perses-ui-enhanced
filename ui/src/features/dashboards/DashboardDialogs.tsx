@@ -26,6 +26,8 @@ import Check from 'mdi-material-ui/Check';
 import ContentCopy from 'mdi-material-ui/ContentCopy';
 import React from 'react';
 
+import type { PublicShareEntry } from '@/lib/api/publicShares';
+
 export interface DashboardDialogsProps {
   // Project create/delete
   createProjOpen: boolean;
@@ -87,6 +89,16 @@ export interface DashboardDialogsProps {
   onChangeShareVisibility: (val: 'private' | 'public') => void;
   shareCopied: 'url' | 'iframe' | null;
   onSetShareCopied: React.Dispatch<React.SetStateAction<'url' | 'iframe' | null>>;
+  isSiteAdmin: boolean;
+  guestDashboardsEnabled: boolean;
+  availableNamespaces: string[];
+  shareNamespaceScope: string;
+  onChangeShareNamespaceScope: (val: string) => void;
+  activePublicShare: PublicShareEntry | undefined;
+  shareSaving: boolean;
+  shareError: string | null;
+  onPublishPublicShare: () => void;
+  onRevokePublicShare: () => void;
 }
 
 export function DashboardDialogs({
@@ -143,6 +155,16 @@ export function DashboardDialogs({
   onChangeShareVisibility,
   shareCopied,
   onSetShareCopied,
+  isSiteAdmin,
+  guestDashboardsEnabled,
+  availableNamespaces,
+  shareNamespaceScope,
+  onChangeShareNamespaceScope,
+  activePublicShare,
+  shareSaving,
+  shareError,
+  onPublishPublicShare,
+  onRevokePublicShare,
 }: DashboardDialogsProps) {
   const muiTheme = useTheme();
 
@@ -393,14 +415,20 @@ export function DashboardDialogs({
             if (shareScope === 'panel' && sharePanelKey) {
               params.set('panel', sharePanelKey);
             }
-            if (shareVisibility === 'public') {
-              params.set('public', '1');
+            if (shareVisibility === 'public' && activePublicShare?.token) {
+              params.set('share', activePublicShare.token);
             }
             const queryStr = params.toString();
-            const embedUrl = `${origin}/embed/projects/${encodeURIComponent(shareTarget.project)}/dashboards/${encodeURIComponent(shareTarget.dashboard.metadata.name)}${queryStr ? `?${queryStr}` : ''}`;
-            const iframeHtml = `<iframe src="${embedUrl}" width="100%" height="${shareScope === 'panel' ? 420 : 680}" frameborder="0" allowfullscreen></iframe>`;
+            const canShowPublicUrl = shareVisibility === 'private' || Boolean(activePublicShare?.token);
+            const embedUrl = canShowPublicUrl
+              ? `${origin}/embed/projects/${encodeURIComponent(shareTarget.project)}/dashboards/${encodeURIComponent(shareTarget.dashboard.metadata.name)}${queryStr ? `?${queryStr}` : ''}`
+              : '';
+            const iframeHtml = canShowPublicUrl
+              ? `<iframe src="${embedUrl}" width="100%" height="${shareScope === 'panel' ? 420 : 680}" frameborder="0" allowfullscreen></iframe>`
+              : '';
 
             const copyShare = async (kind: 'url' | 'iframe', text: string) => {
+              if (!text) return;
               try {
                 await navigator.clipboard.writeText(text);
                 onSetShareCopied(kind);
@@ -437,7 +465,9 @@ export function DashboardDialogs({
                       onChange={(e) => onChangeShareVisibility(e.target.value as 'private' | 'public')}
                     >
                       <MenuItem value="private">Private (Requires Login Session)</MenuItem>
-                      <MenuItem value="public">Public (Unauthenticated / Guest Read)</MenuItem>
+                      <MenuItem value="public" disabled={!isSiteAdmin}>
+                        Public (Guest Role + Token){!isSiteAdmin ? ' — Admin only' : ''}
+                      </MenuItem>
                     </Select>
                   </FormControl>
                 </Stack>
@@ -461,11 +491,67 @@ export function DashboardDialogs({
                 )}
 
                 {shareVisibility === 'public' ? (
-                  <Alert severity="info">
-                    Public embeds bypass the login screen. Make sure Perses <code>guest_permissions</code> in Helm{' '}
-                    <code>values.yaml</code> grants <code>read</code> on <code>Dashboard</code>, <code>Datasource</code>,
-                    and <code>GlobalDatasource</code> for unauthenticated visitors.
-                  </Alert>
+                  <Stack spacing={1.5}>
+                    {!guestDashboardsEnabled && (
+                      <Alert severity="warning">
+                        The <code>guest</code> role currently has <strong>Dashboards</strong> disabled. Enable{' '}
+                        <strong>Dashboards (Overview)</strong> for <code>guest</code> in{' '}
+                        <strong>Site Settings → Role View Permissions</strong> so unauthenticated viewers can load this
+                        link.
+                      </Alert>
+                    )}
+                    {shareError && <Alert severity="error">{shareError}</Alert>}
+                    <FormControl size="small" fullWidth>
+                      <InputLabel id="share-ns-scope-label">Tenant Namespace Scope</InputLabel>
+                      <Select
+                        labelId="share-ns-scope-label"
+                        label="Tenant Namespace Scope"
+                        value={shareNamespaceScope}
+                        onChange={(e) => onChangeShareNamespaceScope(e.target.value)}
+                        disabled={shareSaving}
+                      >
+                        <MenuItem value="*">All namespaces (*)</MenuItem>
+                        {availableNamespaces.map((ns) => (
+                          <MenuItem key={ns} value={ns}>
+                            {ns}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Button
+                        variant="contained"
+                        size="small"
+                        onClick={onPublishPublicShare}
+                        disabled={shareSaving || !isSiteAdmin}
+                      >
+                        {shareSaving
+                          ? 'Saving...'
+                          : activePublicShare
+                            ? 'Update Public Scope'
+                            : 'Publish Public Link'}
+                      </Button>
+                      {activePublicShare && (
+                        <Button
+                          variant="outlined"
+                          color="error"
+                          size="small"
+                          onClick={onRevokePublicShare}
+                          disabled={shareSaving || !isSiteAdmin}
+                        >
+                          Revoke Link
+                        </Button>
+                      )}
+                      {activePublicShare && (
+                        <Chip
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                          label={`Active (${activePublicShare.allowedNamespaces.join(', ')})`}
+                        />
+                      )}
+                    </Stack>
+                  </Stack>
                 ) : (
                   <Alert severity="info">
                     Private embeds reuse the viewer&apos;s Perses/Keycloak browser session. For cross-domain{' '}
@@ -474,47 +560,60 @@ export function DashboardDialogs({
                   </Alert>
                 )}
 
-                <TextField
-                  label="Embed URL"
-                  size="small"
-                  value={embedUrl}
-                  fullWidth
-                  InputProps={{
-                    readOnly: true,
-                    sx: { fontFamily: 'monospace', fontSize: 12 },
-                    endAdornment: (
-                      <Button
-                        size="small"
-                        startIcon={shareCopied === 'url' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
-                        onClick={() => void copyShare('url', embedUrl)}
-                      >
-                        {shareCopied === 'url' ? 'Copied' : 'Copy'}
-                      </Button>
-                    ),
-                  }}
-                />
+                {canShowPublicUrl ? (
+                  <>
+                    <TextField
+                      label="Embed URL"
+                      size="small"
+                      value={embedUrl}
+                      fullWidth
+                      InputProps={{
+                        readOnly: true,
+                        sx: { fontFamily: 'monospace', fontSize: 12 },
+                        endAdornment: (
+                          <Button
+                            size="small"
+                            startIcon={
+                              shareCopied === 'url' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />
+                            }
+                            onClick={() => void copyShare('url', embedUrl)}
+                          >
+                            {shareCopied === 'url' ? 'Copied' : 'Copy'}
+                          </Button>
+                        ),
+                      }}
+                    />
 
-                <TextField
-                  label="HTML <iframe> Snippet"
-                  size="small"
-                  value={iframeHtml}
-                  fullWidth
-                  multiline
-                  minRows={2}
-                  InputProps={{
-                    readOnly: true,
-                    sx: { fontFamily: 'monospace', fontSize: 12 },
-                    endAdornment: (
-                      <Button
-                        size="small"
-                        startIcon={shareCopied === 'iframe' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
-                        onClick={() => void copyShare('iframe', iframeHtml)}
-                      >
-                        {shareCopied === 'iframe' ? 'Copied' : 'Copy'}
-                      </Button>
-                    ),
-                  }}
-                />
+                    <TextField
+                      label="HTML <iframe> Snippet"
+                      size="small"
+                      value={iframeHtml}
+                      fullWidth
+                      multiline
+                      minRows={2}
+                      InputProps={{
+                        readOnly: true,
+                        sx: { fontFamily: 'monospace', fontSize: 12 },
+                        endAdornment: (
+                          <Button
+                            size="small"
+                            startIcon={
+                              shareCopied === 'iframe' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />
+                            }
+                            onClick={() => void copyShare('iframe', iframeHtml)}
+                          >
+                            {shareCopied === 'iframe' ? 'Copied' : 'Copy'}
+                          </Button>
+                        ),
+                      }}
+                    />
+                  </>
+                ) : (
+                  <Alert severity="info">
+                    Click <strong>Publish Public Link</strong> to generate an opaque share token scoped to the selected
+                    namespace(s).
+                  </Alert>
+                )}
               </Stack>
             );
           })()}

@@ -70,6 +70,21 @@ export function useWorkspaceScope({
     [workspaceMap, currentUsername, workspaceSubjects],
   );
 
+  const allWorkspaceNamespaces = useMemo<string[]>(() => {
+    const items = workspaceMap?.data?.items ?? [];
+    const seen = new Set<string>();
+    for (const item of items) {
+      const ns =
+        item.spec?.namespace ||
+        item.status?.namespaceRef?.name ||
+        item.metadata?.labels?.['otterscale.io/namespace'] ||
+        item.metadata?.name ||
+        '';
+      if (ns) seen.add(ns);
+    }
+    return Array.from(seen).sort();
+  }, [workspaceMap]);
+
   const isNamespaceScoped = Boolean(workspaceMap?.enabled && authEnabled && !isSiteAdmin);
 
   const activeScopedNamespaces = useMemo<string[] | null>(() => {
@@ -118,6 +133,7 @@ export function useWorkspaceScope({
     workspaceMap,
     loadingWorkspaceMap,
     userWorkspaces,
+    allWorkspaceNamespaces,
     isNamespaceScoped,
     selectedWorkspaceNs,
     setSelectedWorkspaceNs,

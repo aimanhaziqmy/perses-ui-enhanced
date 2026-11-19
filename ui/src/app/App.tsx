@@ -15,6 +15,7 @@ import {
   getLocalSiteBranding,
   saveClusterSiteBranding,
 } from '@/lib/api/branding';
+import { setActivePublicShareToken } from '@/lib/api/http';
 import { queryKeys } from '@/lib/api/queryKeys';
 import { fetchPersesGlobalRoleBindings, fetchUserPermissions, getUiCapabilities } from '@/lib/api/rbac';
 import {
@@ -43,7 +44,15 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
   const activeKey = navKeyFromPath(location.pathname);
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const isEmbedRoute = location.pathname.startsWith('/embed/') || searchParams.get('embed') === '1';
-  const isPublicEmbed = isEmbedRoute && searchParams.get('public') === '1';
+  const shareToken = isEmbedRoute ? (searchParams.get('share') || '').trim() : '';
+  const isPublicEmbed = isEmbedRoute && Boolean(shareToken);
+
+  // Set synchronously so initial embed fetches include X-Perses-Share-Token
+  setActivePublicShareToken(shareToken || null);
+  useEffect(() => {
+    setActivePublicShareToken(shareToken || null);
+    return () => setActivePublicShareToken(null);
+  }, [shareToken]);
 
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
@@ -149,6 +158,7 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
   const {
     loadingWorkspaceMap,
     userWorkspaces,
+    allWorkspaceNamespaces,
     isNamespaceScoped,
     selectedWorkspaceNs,
     setSelectedWorkspaceNs,
@@ -302,6 +312,9 @@ export function App({ themeMode, onToggleTheme }: { themeMode: ThemeMode; onTogg
               logsInitialQuery={logsInitialQuery}
               isNamespaceScoped={isNamespaceScoped}
               isSiteAdmin={isSiteAdmin}
+              currentUsername={currentUsername}
+              availableNamespaces={allWorkspaceNamespaces}
+              guestDashboardsEnabled={Boolean(roleViewPermissions.roles.guest?.includes('dashboards'))}
               loadingPermissions={loadingPermissions}
               capabilities={capabilities}
               branding={branding}
