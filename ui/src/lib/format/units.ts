@@ -5,6 +5,8 @@
  * and sub-millisecond to multi-day durations.
  */
 
+import { formatValue } from '@perses-dev/components';
+
 export type DurationInputUnit = 'ns' | 'us' | 'ms' | 's';
 
 function isValidNumber(value: number | null | undefined): value is number {
@@ -17,14 +19,8 @@ function isValidNumber(value: number | null | undefined): value is number {
 export function formatBytesIEC(bytes: number | null | undefined, decimals = 1): string {
   if (!isValidNumber(bytes)) return '-';
   if (bytes === 0) return '0 B';
-  const sign = bytes < 0 ? '-' : '';
-  const abs = Math.abs(bytes);
-  if (abs < 1024) return `${sign}${Math.round(abs)} B`;
-
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
-  const exp = Math.min(Math.floor(Math.log(abs) / Math.log(1024)), units.length - 1);
-  const scaled = abs / 1024 ** exp;
-  return `${sign}${scaled.toFixed(decimals)} ${units[exp]}`;
+  if (Math.abs(bytes) < 1024) return `${bytes < 0 ? '-' : ''}${Math.round(Math.abs(bytes))} B`;
+  return formatValue(bytes, { unit: 'bytes', decimalPlaces: decimals, shortValues: true });
 }
 
 /**
@@ -33,14 +29,8 @@ export function formatBytesIEC(bytes: number | null | undefined, decimals = 1): 
 export function formatBytesSI(bytes: number | null | undefined, decimals = 1): string {
   if (!isValidNumber(bytes)) return '-';
   if (bytes === 0) return '0 B';
-  const sign = bytes < 0 ? '-' : '';
-  const abs = Math.abs(bytes);
-  if (abs < 1000) return `${sign}${Math.round(abs)} B`;
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-  const exp = Math.min(Math.floor(Math.log(abs) / Math.log(1000)), units.length - 1);
-  const scaled = abs / 1000 ** exp;
-  return `${sign}${scaled.toFixed(decimals)} ${units[exp]}`;
+  if (Math.abs(bytes) < 1000) return `${bytes < 0 ? '-' : ''}${Math.round(Math.abs(bytes))} B`;
+  return formatValue(bytes, { unit: 'decbytes', decimalPlaces: decimals, shortValues: true });
 }
 
 /**
@@ -48,7 +38,9 @@ export function formatBytesSI(bytes: number | null | undefined, decimals = 1): s
  */
 export function formatThroughput(bytesPerSec: number | null | undefined, decimals = 1): string {
   if (!isValidNumber(bytesPerSec)) return '-';
-  return `${formatBytesIEC(bytesPerSec, decimals)}/s`;
+  if (bytesPerSec === 0) return '0 B/s';
+  if (Math.abs(bytesPerSec) < 1024) return `${bytesPerSec < 0 ? '-' : ''}${Math.round(Math.abs(bytesPerSec))} B/s`;
+  return formatValue(bytesPerSec, { unit: 'bytes/sec', decimalPlaces: decimals, shortValues: true });
 }
 
 /**
@@ -58,14 +50,11 @@ export function formatNetworkBits(bytesPerSec: number | null | undefined, decima
   if (!isValidNumber(bytesPerSec)) return '-';
   const bitsPerSec = bytesPerSec * 8;
   if (bitsPerSec === 0) return '0 bps';
-  const sign = bitsPerSec < 0 ? '-' : '';
-  const abs = Math.abs(bitsPerSec);
-  if (abs < 1000) return `${sign}${Math.round(abs)} bps`;
-
-  const units = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps'];
-  const exp = Math.min(Math.floor(Math.log(abs) / Math.log(1000)), units.length - 1);
-  const scaled = abs / 1000 ** exp;
-  return `${sign}${scaled.toFixed(decimals)} ${units[exp]}`;
+  if (Math.abs(bitsPerSec) < 1000) return `${bitsPerSec < 0 ? '-' : ''}${Math.round(Math.abs(bitsPerSec))} bps`;
+  return formatValue(bitsPerSec, { unit: 'decbits/sec', decimalPlaces: decimals, shortValues: true }).replace(
+    /b\/s$/,
+    'bps',
+  );
 }
 
 /**
@@ -156,11 +145,11 @@ export function formatPercent(
   if (!isValidNumber(value)) return '-';
   const rawPct = isRatio ? value * 100 : value;
   const clamped = Math.max(0, Math.min(100, rawPct));
-  return `${clamped.toFixed(decimals)}%`;
+  return formatValue(clamped, { unit: 'percent', decimalPlaces: decimals });
 }
 
 /**
- * Format temperature in degrees Celsius (`°C`), scaling millidegrees (`> 1000`) automatically if needed.
+ * Format temperature in degrees Celsius (`°C`), scaling millidegrees when `isMillidegrees=true`.
  */
 export function formatTemperatureC(
   value: number | null | undefined,
@@ -169,5 +158,5 @@ export function formatTemperatureC(
 ): string {
   if (!isValidNumber(value)) return '-';
   const c = isMillidegrees ? value / 1000 : value;
-  return `${c.toFixed(decimals)} °C`;
+  return formatValue(c, { unit: 'celsius', decimalPlaces: decimals }).replace(/\s*°C$/, ' °C');
 }
