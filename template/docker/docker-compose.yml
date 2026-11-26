@@ -1,0 +1,37 @@
+services:
+  perses:
+    image: persesdev/perses:v0.55.1
+    container_name: perses
+    restart: unless-stopped
+    environment:
+      PERSES_SECURITY_ENCRYPTION_KEY: "${PERSES_SECURITY_ENCRYPTION_KEY:?Set PERSES_SECURITY_ENCRYPTION_KEY in .env or run ./bootstrap.sh}"
+    volumes:
+      - perses-data:/perses
+      - ./config.yml:/etc/perses/config.yml:ro
+    command: ["--config=/etc/perses/config.yml"]
+    networks:
+      - obs-net
+
+  perses-ui-enhanced:
+    build:
+      context: ../../ui
+      dockerfile: Dockerfile
+    image: perses-ui-enhanced:v1.1.49
+    container_name: perses-ui-enhanced
+    restart: unless-stopped
+    depends_on:
+      - perses
+    environment:
+      PERSES_UPSTREAM: "perses:8080"
+    ports:
+      - "8080:8080"
+    networks:
+      - obs-net
+
+volumes:
+  perses-data:
+
+networks:
+  obs-net:
+    name: obs-net
+    driver: bridge

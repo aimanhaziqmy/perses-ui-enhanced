@@ -69,6 +69,8 @@ flowchart LR
 ├── .github/workflows/ci.yml    # Automated Vitest, ESLint, TypeScript & Vite build CI
 ├── helm/
 │   └── perses-observability/   # Turnkey umbrella Helm chart (VictoriaLogs + VictoriaMetrics + Perses + UI)
+├── template/
+│   └── docker/                 # Standalone Docker Compose template (Perses + UI + bootstrap.sh)
 ├── ui/
 │   ├── deploy/nginx/           # Hardened Nginx config & njs gateway (audit.js + Vitest tests)
 │   ├── src/

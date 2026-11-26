@@ -27,7 +27,6 @@ import {
 import { useTheme } from '@mui/material/styles';
 import { useQuery } from '@tanstack/react-query';
 import Magnify from 'mdi-material-ui/Magnify';
-import Plus from 'mdi-material-ui/Plus';
 import Refresh from 'mdi-material-ui/Refresh';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -218,23 +217,17 @@ export function TracesExplorerView() {
 
   if (!loadingDatasources && traceTargets.length === 0) {
     return (
-      <Card>
-        <CardContent sx={{ py: 6, textAlign: 'center' }}>
-          <Stack spacing={1.5} alignItems="center">
-            <Typography variant="subtitle1" fontWeight={700}>
-              No Trace Data Source Configured
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 520 }}>
-              Add an Apache 2.0 trace backend such as <strong>Jaeger</strong> or <strong>VictoriaTraces</strong>{' '}
-              (<code>JaegerDatasource</code>) or <strong>Tempo</strong> (<code>TempoDatasource</code>) in{' '}
-              <strong>Integrations → Data sources</strong> to search traces and inspect span waterfalls.
-            </Typography>
-            <Button variant="contained" startIcon={<Plus />} onClick={() => navigate('/datasources')}>
-              Add Trace Data Source
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
+      <Alert
+        severity="info"
+        action={
+          <Button size="small" color="inherit" onClick={() => navigate('/datasources')}>
+            Add data source
+          </Button>
+        }
+      >
+        No trace data source configured yet. Add a Jaeger / VictoriaTraces (JaegerDatasource) or Tempo
+        (TempoDatasource) data source in Integrations → Data sources to search traces and inspect span waterfalls.
+      </Alert>
     );
   }
 

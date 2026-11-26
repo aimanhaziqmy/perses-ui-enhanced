@@ -650,23 +650,17 @@ export function LogsExplorerView({
 
   if (!activeTarget) {
     return (
-      <Card>
-        <CardContent sx={{ py: 6, textAlign: 'center' }}>
-          <Stack spacing={1.5} alignItems="center">
-            <VictoriaLogsBrandIcon size={36} />
-            <Typography variant="subtitle1" fontWeight={700}>
-              No VictoriaLogs data source configured
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Add a VictoriaLogsDatasource in Integrations → Data sources to query logs, filter levels, and save shared
-              presets.
-            </Typography>
-            <Button variant="contained" onClick={() => navigate('/datasources')}>
-              Add data source
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
+      <Alert
+        severity="info"
+        action={
+          <Button size="small" color="inherit" onClick={() => navigate('/datasources')}>
+            Add data source
+          </Button>
+        }
+      >
+        No VictoriaLogs data source configured yet. Add a VictoriaLogsDatasource in Integrations → Data sources to
+        query logs, filter levels, and save shared presets.
+      </Alert>
     );
   }
 
