@@ -17,4 +17,7 @@ dist/
 !/helm/
 /helm/*
 !/helm/perses-observability/
+!/template/
+/template/*
+!/template/docker/
 !/ui/

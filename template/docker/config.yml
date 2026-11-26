@@ -1,0 +1,22 @@
+security:
+  readonly: false
+  enable_auth: true
+  # Provide PERSES_SECURITY_ENCRYPTION_KEY via .env / docker-compose.yml
+  cookie:
+    same_site: lax
+    secure: false # Set to true when serving behind HTTPS
+  authentication:
+    access_token_ttl: 1h
+    refresh_token_ttl: 24h
+    disable_sign_up: false
+    providers:
+      enable_native: true
+  authorization:
+    provider:
+      native:
+        enable: true
+
+database:
+  file:
+    folder: /perses
+    extension: json
